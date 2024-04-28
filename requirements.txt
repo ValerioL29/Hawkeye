@@ -1,0 +1,12 @@
+# Model
+torch
+torchvision
+opencv-contrib-python
+
+# YOLO
+ultralytics
+
+# Logging Utils
+rich
+
+# Model Export
