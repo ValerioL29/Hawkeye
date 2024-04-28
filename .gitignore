@@ -172,8 +172,9 @@ cython_debug/
 *.pth
 # Checkpoint folders
 /checkpoints/yolov9
-/checkpoints/CLRerNet
 /checkpoints/yolov8
+/checkpoints/cfg/
 
 # Data folders
 /data/
+/outputs
