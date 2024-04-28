@@ -161,3 +161,19 @@ cython_debug/
 
 # Vscode
 .vscode/
+
+# Model checkpoints
+*.ckpt
+*.pt
+*.bin
+*.h5
+*.hdf5
+*.model
+*.pth
+# Checkpoint folders
+/checkpoints/yolov9
+/checkpoints/CLRerNet
+/checkpoints/yolov8
+
+# Data folders
+/data/

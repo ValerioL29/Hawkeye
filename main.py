@@ -1,16 +1,21 @@
-# 这是一个示例 Python 脚本。
+from rich import print
+from ultralytics import YOLO
 
-# 按 ⌃R 执行或将其替换为您的代码。
-# 按 Double ⇧ 在所有地方搜索类、文件、工具窗口、操作和设置。
+from hawkeye.utils import MODELS_DIR, DATA_DIR
 
+# Build a YOLOv9c model from scratch
+# model = YOLO('yolov9c.yaml')
 
-def print_hi(name):
-    # 在下面的代码行中使用断点来调试脚本。
-    print(f'Hi, {name}')  # 按 ⌘F8 切换断点。
+# Build a YOLOv9c model from pretrained weight
+model = YOLO(MODELS_DIR / "yolov9" / "yolov9e-seg.pt")
 
+# Display model information (optional)
+print(f"Model info: {model.info()}")
 
-# 按装订区域中的绿色按钮以运行脚本。
-if __name__ == '__main__':
-    print_hi('PyCharm')
+# Train the model on the COCO8 example dataset for 100 epochs
+# results = model.train(data='coco8.yaml', epochs=100, imgsz=640)
 
-# 访问 https://www.jetbrains.com/help/pycharm/ 获取 PyCharm 帮助
+# Run inference with the YOLOv9c model on the 'bus.jpg' image
+# results = model(DATA_DIR / "demo" / "bus.jpg")
+# print(type(results))
+# print(type(results[0]))

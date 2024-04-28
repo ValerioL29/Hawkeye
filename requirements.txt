@@ -5,6 +5,7 @@ opencv-contrib-python
 
 # YOLO
 ultralytics
+dill
 
 # Logging Utils
 rich
