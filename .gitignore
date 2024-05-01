@@ -176,5 +176,5 @@ cython_debug/
 /checkpoints/cfg/
 
 # Data folders
-/data/
+/datasets/
 /outputs

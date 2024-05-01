@@ -9,7 +9,7 @@ ASSETS_DIR = ROOT_DIR / "assets"
 os.makedirs(ASSETS_DIR, exist_ok=True)
 
 # Data directory for storing datasets
-DATA_DIR = ROOT_DIR / "data"
+DATA_DIR = ROOT_DIR / "datasets"
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # Checkpoints directory for storing model weights
