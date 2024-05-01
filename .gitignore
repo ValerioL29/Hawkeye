@@ -178,3 +178,4 @@ cython_debug/
 # Data folders
 /datasets/
 /outputs
+runs/
