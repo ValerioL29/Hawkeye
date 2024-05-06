@@ -105,6 +105,12 @@ ENV/
 .mypy_cache/
 
 .vscode/sftp.json
+.vscode/
 
 # ignore the symbolic link to doc media
 do/media
+
+# dataset
+data/
+base_data
+labels

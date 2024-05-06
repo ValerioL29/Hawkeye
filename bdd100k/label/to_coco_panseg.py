@@ -117,14 +117,29 @@ def bitmask2panseg_parallel(
         os.path.join(pan_mask_base, image["file_name"]) for image in images
     ]
 
-    with Pool(nproc) as pool:
-        pool.starmap(
-            bitmask2pan_mask,
-            tqdm(zip(mask_names, pan_names), total=len(mask_names)),
-        )
-        annotations = pool.starmap(
-            bitmask2pan_json, tqdm(zip(images, mask_names), total=len(images))
-        )
+    if nproc > 1:
+        with Pool(nproc) as pool:
+            pool.starmap(
+                bitmask2pan_mask,
+                tqdm(zip(mask_names, pan_names), total=len(mask_names)),
+            )
+            annotations = pool.starmap(
+                bitmask2pan_json,
+                tqdm(zip(images, mask_names), total=len(images)),
+            )
+    else:
+        print("Convert bitmask into panoptic segmentation mask...")
+        for mask_name, pan_name in tqdm(
+            zip(mask_names, pan_names), total=len(mask_names)
+        ):
+            bitmask2pan_mask(mask_name, pan_name)
+        print("Convert bitmask into panoptic segmentation json...")
+        annotations = [
+            bitmask2pan_json(image, mask_name)
+            for image, mask_name in tqdm(
+                zip(images, mask_names), total=len(images)
+            )
+        ]
     annotations = sorted(annotations, key=lambda ann: ann["image_id"])
     return annotations
 

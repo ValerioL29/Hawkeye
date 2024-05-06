@@ -216,10 +216,29 @@ def bitmask2coco_with_ids_parallel(
     """Execute the bitmask conversion in parallel."""
     logger.info("Converting annotations...")
 
-    with Pool(nproc) as pool:
-        annotations_list = pool.starmap(
-            bitmask2coco_with_ids,
-            tqdm(
+    if nproc > 1:
+        with Pool(nproc) as pool:
+            annotations_list = pool.starmap(
+                bitmask2coco_with_ids,
+                tqdm(
+                    zip(
+                        annotations_list,
+                        mask_names,
+                        category_ids_list,
+                        instance_ids_list,
+                    ),
+                    total=len(annotations_list),
+                ),
+            )
+    else:
+        annotations_list = [
+            bitmask2coco_with_ids(
+                annotations=annoations,
+                mask_name=mask_name,
+                category_ids=category_ids,
+                instance_ids=instance,
+            )
+            for annoations, mask_name, category_ids, instance in tqdm(
                 zip(
                     annotations_list,
                     mask_names,
@@ -227,8 +246,9 @@ def bitmask2coco_with_ids_parallel(
                     instance_ids_list,
                 ),
                 total=len(annotations_list),
-            ),
-        )
+            )
+        ]
+
     annotations: List[AnnType] = []
     for anns in annotations_list:
         annotations.extend(anns)
@@ -555,7 +575,7 @@ def main() -> None:
         coco = convert_func(frames=frames, config=bdd100k_config.scalabel)
 
     logger.info("Saving converted annotations to disk...")
-    with open(args.output, "w", encoding="utf-8") as f:
+    with open(args.output, "w+", encoding="utf-8") as f:
         json.dump(coco, f)
     logger.info("Finished!")
 
