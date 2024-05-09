@@ -60,7 +60,9 @@ class YOLODataset(BaseDataset):
         self.use_keypoints = task == "pose"
         self.use_obb = task == "obb"
         self.data = data
-        assert not (self.use_segments and self.use_keypoints), "Can not use both segments and keypoints."
+        assert not (
+            self.use_segments and self.use_keypoints
+        ), "Can not use both segments and keypoints."
         super().__init__(*args, **kwargs)
 
     def cache_labels(self, path=Path("./labels.cache")):
@@ -74,7 +76,13 @@ class YOLODataset(BaseDataset):
             (dict): labels.
         """
         x = {"labels": []}
-        nm, nf, ne, nc, msgs = 0, 0, 0, 0, []  # number missing, found, empty, corrupt, messages
+        nm, nf, ne, nc, msgs = (
+            0,
+            0,
+            0,
+            0,
+            [],
+        )  # number missing, found, empty, corrupt, messages
         desc = f"{self.prefix}Scanning {path.parent / path.stem}..."
         total = len(self.im_files)
         nkpt, ndim = self.data.get("kpt_shape", (0, 0))
@@ -97,7 +105,18 @@ class YOLODataset(BaseDataset):
                 ),
             )
             pbar = TQDM(results, desc=desc, total=total)
-            for im_file, lb, shape, segments, keypoint, nm_f, nf_f, ne_f, nc_f, msg in pbar:
+            for (
+                im_file,
+                lb,
+                shape,
+                segments,
+                keypoint,
+                nm_f,
+                nf_f,
+                ne_f,
+                nc_f,
+                msg,
+            ) in pbar:
                 nm += nm_f
                 nf += nf_f
                 ne += ne_f
@@ -123,26 +142,48 @@ class YOLODataset(BaseDataset):
         if msgs:
             LOGGER.info("\n".join(msgs))
         if nf == 0:
-            LOGGER.warning(f"{self.prefix}WARNING ⚠️ No labels found in {path}. {HELP_URL}")
+            LOGGER.warning(
+                f"{self.prefix}WARNING ⚠️ No labels found in {path}. {HELP_URL}"
+            )
         x["hash"] = get_hash(self.label_files + self.im_files)
         x["results"] = nf, nm, ne, nc, len(self.im_files)
         x["msgs"] = msgs  # warnings
         save_dataset_cache_file(self.prefix, path, x, DATASET_CACHE_VERSION)
         return x
 
+    def itss_img2label_paths(self, img_paths):
+        """itss_get_labels"""
+        from pathlib import Path
+
+        dataset_path = self.data["path"]  # PosixPath
+        label_prefix = dataset_path / "labels"
+        labels = [
+            label_prefix / im_file.split("/")[-1].replace(".jpg", ".txt")
+            for im_file in img_paths
+        ]
+
+        return labels
+
     def get_labels(self):
         """Returns dictionary of labels for YOLO training."""
         self.label_files = img2label_paths(self.im_files)
         cache_path = Path(self.label_files[0]).parent.with_suffix(".cache")
         try:
-            cache, exists = load_dataset_cache_file(cache_path), True  # attempt to load a *.cache file
+            cache, exists = (
+                load_dataset_cache_file(cache_path),
+                True,
+            )  # attempt to load a *.cache file
             assert cache["version"] == DATASET_CACHE_VERSION  # matches current version
-            assert cache["hash"] == get_hash(self.label_files + self.im_files)  # identical hash
+            assert cache["hash"] == get_hash(
+                self.label_files + self.im_files
+            )  # identical hash
         except (FileNotFoundError, AssertionError, AttributeError):
             cache, exists = self.cache_labels(cache_path), False  # run cache ops
 
         # Display cache
-        nf, nm, ne, nc, n = cache.pop("results")  # found, missing, empty, corrupt, total
+        nf, nm, ne, nc, n = cache.pop(
+            "results"
+        )  # found, missing, empty, corrupt, total
         if exists and LOCAL_RANK in {-1, 0}:
             d = f"Scanning {cache_path}... {nf} images, {nm + ne} backgrounds, {nc} corrupt"
             TQDM(None, desc=self.prefix + d, total=n, initial=n)  # display results
@@ -153,11 +194,15 @@ class YOLODataset(BaseDataset):
         [cache.pop(k) for k in ("hash", "version", "msgs")]  # remove items
         labels = cache["labels"]
         if not labels:
-            LOGGER.warning(f"WARNING ⚠️ No images found in {cache_path}, training may not work correctly. {HELP_URL}")
+            LOGGER.warning(
+                f"WARNING ⚠️ No images found in {cache_path}, training may not work correctly. {HELP_URL}"
+            )
         self.im_files = [lb["im_file"] for lb in labels]  # update im_files
 
         # Check if the dataset is all boxes or all segments
-        lengths = ((len(lb["cls"]), len(lb["bboxes"]), len(lb["segments"])) for lb in labels)
+        lengths = (
+            (len(lb["cls"]), len(lb["bboxes"]), len(lb["segments"])) for lb in labels
+        )
         len_cls, len_boxes, len_segments = (sum(x) for x in zip(*lengths))
         if len_segments and len_boxes != len_segments:
             LOGGER.warning(
@@ -168,7 +213,9 @@ class YOLODataset(BaseDataset):
             for lb in labels:
                 lb["segments"] = []
         if len_cls == 0:
-            LOGGER.warning(f"WARNING ⚠️ No labels found in {cache_path}, training may not work correctly. {HELP_URL}")
+            LOGGER.warning(
+                f"WARNING ⚠️ No labels found in {cache_path}, training may not work correctly. {HELP_URL}"
+            )
         return labels
 
     def build_transforms(self, hyp=None):
@@ -178,7 +225,9 @@ class YOLODataset(BaseDataset):
             hyp.mixup = hyp.mixup if self.augment and not self.rect else 0.0
             transforms = v8_transforms(self, self.imgsz, hyp)
         else:
-            transforms = Compose([LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False)])
+            transforms = Compose(
+                [LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False)]
+            )
         transforms.append(
             Format(
                 bbox_format="xywh",
@@ -220,10 +269,14 @@ class YOLODataset(BaseDataset):
         if len(segments) > 0:
             # list[np.array(1000, 2)] * num_samples
             # (N, 1000, 2)
-            segments = np.stack(resample_segments(segments, n=segment_resamples), axis=0)
+            segments = np.stack(
+                resample_segments(segments, n=segment_resamples), axis=0
+            )
         else:
             segments = np.zeros((0, segment_resamples, 2), dtype=np.float32)
-        label["instances"] = Instances(bboxes, segments, keypoints, bbox_format=bbox_format, normalized=normalized)
+        label["instances"] = Instances(
+            bboxes, segments, keypoints, bbox_format=bbox_format, normalized=normalized
+        )
         return label
 
     @staticmethod
@@ -274,14 +327,18 @@ class YOLOMultiModalDataset(YOLODataset):
         transforms = super().build_transforms(hyp)
         if self.augment:
             # NOTE: hard-coded the args for now.
-            transforms.insert(-1, RandomLoadText(max_samples=min(self.data["nc"], 80), padding=True))
+            transforms.insert(
+                -1, RandomLoadText(max_samples=min(self.data["nc"], 80), padding=True)
+            )
         return transforms
 
 
 class GroundingDataset(YOLODataset):
     def __init__(self, *args, task="detect", json_file, **kwargs):
         """Initializes a GroundingDataset for object detection, loading annotations from a specified JSON file."""
-        assert task == "detect", "`GroundingDataset` only support `detect` task for now!"
+        assert (
+            task == "detect"
+        ), "`GroundingDataset` only support `detect` task for now!"
         self.json_file = json_file
         super().__init__(*args, task=task, data={}, **kwargs)
 
@@ -299,7 +356,9 @@ class GroundingDataset(YOLODataset):
         imgToAnns = defaultdict(list)
         for ann in annotations["annotations"]:
             imgToAnns[ann["image_id"]].append(ann)
-        for img_id, anns in TQDM(imgToAnns.items(), desc=f"Reading annotations {self.json_file}"):
+        for img_id, anns in TQDM(
+            imgToAnns.items(), desc=f"Reading annotations {self.json_file}"
+        ):
             img = images[f"{img_id:d}"]
             h, w, f = img["height"], img["width"], img["file_name"]
             im_file = Path(self.img_path) / f
@@ -319,7 +378,9 @@ class GroundingDataset(YOLODataset):
                 if box[2] <= 0 or box[3] <= 0:
                     continue
 
-                cat_name = " ".join([img["caption"][t[0] : t[1]] for t in ann["tokens_positive"]])
+                cat_name = " ".join(
+                    [img["caption"][t[0] : t[1]] for t in ann["tokens_positive"]]
+                )
                 if cat_name not in cat2id:
                     cat2id[cat_name] = len(cat2id)
                     texts.append([cat_name])
@@ -327,7 +388,11 @@ class GroundingDataset(YOLODataset):
                 box = [cls] + box.tolist()
                 if box not in bboxes:
                     bboxes.append(box)
-            lb = np.array(bboxes, dtype=np.float32) if len(bboxes) else np.zeros((0, 5), dtype=np.float32)
+            lb = (
+                np.array(bboxes, dtype=np.float32)
+                if len(bboxes)
+                else np.zeros((0, 5), dtype=np.float32)
+            )
             labels.append(
                 {
                     "im_file": im_file,
@@ -424,10 +489,16 @@ class ClassificationDataset:
         if augment and args.fraction < 1.0:  # reduce training fraction
             self.samples = self.samples[: round(len(self.samples) * args.fraction)]
         self.prefix = colorstr(f"{prefix}: ") if prefix else ""
-        self.cache_ram = args.cache is True or str(args.cache).lower() == "ram"  # cache images into RAM
-        self.cache_disk = str(args.cache).lower() == "disk"  # cache images on hard drive as uncompressed *.npy files
+        self.cache_ram = (
+            args.cache is True or str(args.cache).lower() == "ram"
+        )  # cache images into RAM
+        self.cache_disk = (
+            str(args.cache).lower() == "disk"
+        )  # cache images on hard drive as uncompressed *.npy files
         self.samples = self.verify_images()  # filter out bad images
-        self.samples = [list(x) + [Path(x[0]).with_suffix(".npy"), None] for x in self.samples]  # file, index, npy, im
+        self.samples = [
+            list(x) + [Path(x[0]).with_suffix(".npy"), None] for x in self.samples
+        ]  # file, index, npy, im
         scale = (1.0 - args.scale, 1.0)  # (0.08, 1.0)
         self.torch_transforms = (
             classify_augmentations(
@@ -447,9 +518,13 @@ class ClassificationDataset:
 
     def __getitem__(self, i):
         """Returns subset of data and targets corresponding to given indices."""
-        f, j, fn, im = self.samples[i]  # filename, index, filename.with_suffix('.npy'), image
+        f, j, fn, im = self.samples[
+            i
+        ]  # filename, index, filename.with_suffix('.npy'), image
         if self.cache_ram:
-            if im is None:  # Warning: two separate if statements required here, do not combine this with previous line
+            if (
+                im is None
+            ):  # Warning: two separate if statements required here, do not combine this with previous line
                 im = self.samples[i][3] = cv2.imread(f)
         elif self.cache_disk:
             if not fn.exists():  # load npy
@@ -474,8 +549,12 @@ class ClassificationDataset:
         with contextlib.suppress(FileNotFoundError, AssertionError, AttributeError):
             cache = load_dataset_cache_file(path)  # attempt to load a *.cache file
             assert cache["version"] == DATASET_CACHE_VERSION  # matches current version
-            assert cache["hash"] == get_hash([x[0] for x in self.samples])  # identical hash
-            nf, nc, n, samples = cache.pop("results")  # found, missing, empty, corrupt, total
+            assert cache["hash"] == get_hash(
+                [x[0] for x in self.samples]
+            )  # identical hash
+            nf, nc, n, samples = cache.pop(
+                "results"
+            )  # found, missing, empty, corrupt, total
             if LOCAL_RANK in {-1, 0}:
                 d = f"{desc} {nf} images, {nc} corrupt"
                 TQDM(None, desc=d, total=n, initial=n)
@@ -486,7 +565,9 @@ class ClassificationDataset:
         # Run scan if *.cache retrieval failed
         nf, nc, msgs, samples, x = 0, 0, [], [], {}
         with ThreadPool(NUM_THREADS) as pool:
-            results = pool.imap(func=verify_image, iterable=zip(self.samples, repeat(self.prefix)))
+            results = pool.imap(
+                func=verify_image, iterable=zip(self.samples, repeat(self.prefix))
+            )
             pbar = TQDM(results, desc=desc, total=len(self.samples))
             for sample, nf_f, nc_f, msg in pbar:
                 if nf_f:
