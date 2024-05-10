@@ -61,14 +61,23 @@ def multi_scale_deformable_attn_pytorch(
         # bs, H_*W_, num_heads*embed_dims ->
         # bs, num_heads*embed_dims, H_*W_ ->
         # bs*num_heads, embed_dims, H_, W_
-        value_l_ = value_list[level].flatten(2).transpose(1, 2).reshape(bs * num_heads, embed_dims, H_, W_)
+        value_l_ = (
+            value_list[level]
+            .flatten(2)
+            .transpose(1, 2)
+            .reshape(bs * num_heads, embed_dims, H_, W_)
+        )
         # bs, num_queries, num_heads, num_points, 2 ->
         # bs, num_heads, num_queries, num_points, 2 ->
         # bs*num_heads, num_queries, num_points, 2
         sampling_grid_l_ = sampling_grids[:, :, :, level].transpose(1, 2).flatten(0, 1)
         # bs*num_heads, embed_dims, num_queries, num_points
         sampling_value_l_ = F.grid_sample(
-            value_l_, sampling_grid_l_, mode="bilinear", padding_mode="zeros", align_corners=False
+            value_l_,
+            sampling_grid_l_,
+            mode="bilinear",
+            padding_mode="zeros",
+            align_corners=False,
         )
         sampling_value_list.append(sampling_value_l_)
     # (bs, num_queries, num_heads, num_levels, num_points) ->

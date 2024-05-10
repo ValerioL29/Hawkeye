@@ -8,7 +8,11 @@ from ultralytics.models import yolo
 from ultralytics.nn.tasks import ClassificationModel, attempt_load_one_weight
 from ultralytics.utils import DEFAULT_CFG, LOGGER, RANK, colorstr
 from ultralytics.utils.plotting import plot_images, plot_results
-from ultralytics.utils.torch_utils import is_parallel, strip_optimizer, torch_distributed_zero_first
+from ultralytics.utils.torch_utils import (
+    is_parallel,
+    strip_optimizer,
+    torch_distributed_zero_first,
+)
 
 
 class ClassificationTrainer(BaseTrainer):
@@ -43,7 +47,9 @@ class ClassificationTrainer(BaseTrainer):
 
     def get_model(self, cfg=None, weights=None, verbose=True):
         """Returns a modified PyTorch model configured for training YOLO."""
-        model = ClassificationModel(cfg, nc=self.data["nc"], verbose=verbose and RANK == -1)
+        model = ClassificationModel(
+            cfg, nc=self.data["nc"], verbose=verbose and RANK == -1
+        )
         if weights:
             model.load(weights)
 
@@ -60,7 +66,9 @@ class ClassificationTrainer(BaseTrainer):
         """Load, create or download model for any task."""
         import torchvision  # scope for faster 'import ultralytics'
 
-        if isinstance(self.model, torch.nn.Module):  # if model is loaded beforehand. No setup needed
+        if isinstance(
+            self.model, torch.nn.Module
+        ):  # if model is loaded beforehand. No setup needed
             return
 
         model, ckpt = str(self.model), None
@@ -72,20 +80,28 @@ class ClassificationTrainer(BaseTrainer):
         elif model.split(".")[-1] in {"yaml", "yml"}:
             self.model = self.get_model(cfg=model)
         elif model in torchvision.models.__dict__:
-            self.model = torchvision.models.__dict__[model](weights="IMAGENET1K_V1" if self.args.pretrained else None)
+            self.model = torchvision.models.__dict__[model](
+                weights="IMAGENET1K_V1" if self.args.pretrained else None
+            )
         else:
-            raise FileNotFoundError(f"ERROR: model={model} not found locally or online. Please check model name.")
+            raise FileNotFoundError(
+                f"ERROR: model={model} not found locally or online. Please check model name."
+            )
         ClassificationModel.reshape_outputs(self.model, self.data["nc"])
 
         return ckpt
 
     def build_dataset(self, img_path, mode="train", batch=None):
         """Creates a ClassificationDataset instance given an image path, and mode (train/test etc.)."""
-        return ClassificationDataset(root=img_path, args=self.args, augment=mode == "train", prefix=mode)
+        return ClassificationDataset(
+            root=img_path, args=self.args, augment=mode == "train", prefix=mode
+        )
 
     def get_dataloader(self, dataset_path, batch_size=16, rank=0, mode="train"):
         """Returns PyTorch DataLoader with transforms to preprocess images for inference."""
-        with torch_distributed_zero_first(rank):  # init dataset *.cache only once if DDP
+        with torch_distributed_zero_first(
+            rank
+        ):  # init dataset *.cache only once if DDP
             dataset = self.build_dataset(dataset_path, mode)
 
         loader = build_dataloader(dataset, batch_size, self.args.workers, rank=rank)
@@ -116,7 +132,9 @@ class ClassificationTrainer(BaseTrainer):
     def get_validator(self):
         """Returns an instance of ClassificationValidator for validation."""
         self.loss_names = ["loss"]
-        return yolo.classify.ClassificationValidator(self.test_loader, self.save_dir, _callbacks=self.callbacks)
+        return yolo.classify.ClassificationValidator(
+            self.test_loader, self.save_dir, _callbacks=self.callbacks
+        )
 
     def label_loss_items(self, loss_items=None, prefix="train"):
         """
@@ -132,7 +150,9 @@ class ClassificationTrainer(BaseTrainer):
 
     def plot_metrics(self):
         """Plots metrics from a CSV file."""
-        plot_results(file=self.csv, classify=True, on_plot=self.on_plot)  # save results.png
+        plot_results(
+            file=self.csv, classify=True, on_plot=self.on_plot
+        )  # save results.png
 
     def final_eval(self):
         """Evaluate trained model and save validation results."""
@@ -153,7 +173,9 @@ class ClassificationTrainer(BaseTrainer):
         plot_images(
             images=batch["img"],
             batch_idx=torch.arange(len(batch["img"])),
-            cls=batch["cls"].view(-1),  # warning: use .view(), not .squeeze() for Classify models
+            cls=batch["cls"].view(
+                -1
+            ),  # warning: use .view(), not .squeeze() for Classify models
             fname=self.save_dir / f"train_batch{ni}.jpg",
             on_plot=self.on_plot,
         )

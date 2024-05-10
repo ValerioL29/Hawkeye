@@ -26,7 +26,15 @@ import numpy as np
 import torch
 
 from ultralytics.cfg import get_cfg, get_save_dir
-from ultralytics.utils import DEFAULT_CFG, LOGGER, callbacks, colorstr, remove_colorstr, yaml_print, yaml_save
+from ultralytics.utils import (
+    DEFAULT_CFG,
+    LOGGER,
+    callbacks,
+    colorstr,
+    remove_colorstr,
+    yaml_print,
+    yaml_save,
+)
 from ultralytics.utils.plotting import plot_tune_results
 
 
@@ -92,7 +100,10 @@ class Tuner:
             "translate": (0.0, 0.9),  # image translation (+/- fraction)
             "scale": (0.0, 0.95),  # image scale (+/- gain)
             "shear": (0.0, 10.0),  # image shear (+/- deg)
-            "perspective": (0.0, 0.001),  # image perspective (+/- fraction), range 0-0.001
+            "perspective": (
+                0.0,
+                0.001,
+            ),  # image perspective (+/- fraction), range 0-0.001
             "flipud": (0.0, 1.0),  # image flip up-down (probability)
             "fliplr": (0.0, 1.0),  # image flip left-right (probability)
             "bgr": (0.0, 1.0),  # image channel bgr (probability)
@@ -140,11 +151,15 @@ class Tuner:
             # Mutate
             r = np.random  # method
             r.seed(int(time.time()))
-            g = np.array([v[2] if len(v) == 3 else 1.0 for k, v in self.space.items()])  # gains 0-1
+            g = np.array(
+                [v[2] if len(v) == 3 else 1.0 for k, v in self.space.items()]
+            )  # gains 0-1
             ng = len(self.space)
             v = np.ones(ng)
             while all(v == 1):  # mutate until a change occurs (prevent duplicates)
-                v = (g * (r.random(ng) < mutation) * r.randn(ng) * r.random() * sigma + 1).clip(0.3, 3.0)
+                v = (
+                    g * (r.random(ng) < mutation) * r.randn(ng) * r.random() * sigma + 1
+                ).clip(0.3, 3.0)
             hyp = {k: float(x[i + 1] * v[i]) for i, k in enumerate(self.space.keys())}
         else:
             hyp = {k: getattr(self.args, k) for k in self.space.keys()}
@@ -183,7 +198,9 @@ class Tuner:
         for i in range(iterations):
             # Mutate hyperparameters
             mutated_hyp = self._mutate()
-            LOGGER.info(f"{self.prefix}Starting iteration {i + 1}/{iterations} with hyperparameters: {mutated_hyp}")
+            LOGGER.info(
+                f"{self.prefix}Starting iteration {i + 1}/{iterations} with hyperparameters: {mutated_hyp}"
+            )
 
             metrics = {}
             train_args = {**vars(self.args), **mutated_hyp}
@@ -193,17 +210,25 @@ class Tuner:
                 # Train YOLO model with mutated hyperparameters (run in subprocess to avoid dataloader hang)
                 cmd = ["yolo", "train", *(f"{k}={v}" for k, v in train_args.items())]
                 return_code = subprocess.run(cmd, check=True).returncode
-                ckpt_file = weights_dir / ("best.pt" if (weights_dir / "best.pt").exists() else "last.pt")
+                ckpt_file = weights_dir / (
+                    "best.pt" if (weights_dir / "best.pt").exists() else "last.pt"
+                )
                 metrics = torch.load(ckpt_file)["train_metrics"]
                 assert return_code == 0, "training failed"
 
             except Exception as e:
-                LOGGER.warning(f"WARNING ❌️ training failure for hyperparameter tuning iteration {i + 1}\n{e}")
+                LOGGER.warning(
+                    f"WARNING ❌️ training failure for hyperparameter tuning iteration {i + 1}\n{e}"
+                )
 
             # Save results and mutated_hyp to CSV
             fitness = metrics.get("fitness", 0.0)
             log_row = [round(fitness, 5)] + [mutated_hyp[k] for k in self.space.keys()]
-            headers = "" if self.tune_csv.exists() else (",".join(["fitness"] + list(self.space.keys())) + "\n")
+            headers = (
+                ""
+                if self.tune_csv.exists()
+                else (",".join(["fitness"] + list(self.space.keys())) + "\n")
+            )
             with open(self.tune_csv, "a") as f:
                 f.write(headers + ",".join(map(str, log_row)) + "\n")
 
@@ -218,22 +243,26 @@ class Tuner:
                 for ckpt in weights_dir.glob("*.pt"):
                     shutil.copy2(ckpt, self.tune_dir / "weights")
             elif cleanup:
-                shutil.rmtree(weights_dir, ignore_errors=True)  # remove iteration weights/ dir to reduce storage space
+                shutil.rmtree(
+                    weights_dir, ignore_errors=True
+                )  # remove iteration weights/ dir to reduce storage space
 
             # Plot tune results
             plot_tune_results(self.tune_csv)
 
             # Save and print tune results
             header = (
-                f'{self.prefix}{i + 1}/{iterations} iterations complete ✅ ({time.time() - t0:.2f}s)\n'
+                f"{self.prefix}{i + 1}/{iterations} iterations complete ✅ ({time.time() - t0:.2f}s)\n"
                 f'{self.prefix}Results saved to {colorstr("bold", self.tune_dir)}\n'
-                f'{self.prefix}Best fitness={fitness[best_idx]} observed at iteration {best_idx + 1}\n'
-                f'{self.prefix}Best fitness metrics are {best_metrics}\n'
-                f'{self.prefix}Best fitness model is {best_save_dir}\n'
-                f'{self.prefix}Best fitness hyperparameters are printed below.\n'
+                f"{self.prefix}Best fitness={fitness[best_idx]} observed at iteration {best_idx + 1}\n"
+                f"{self.prefix}Best fitness metrics are {best_metrics}\n"
+                f"{self.prefix}Best fitness model is {best_save_dir}\n"
+                f"{self.prefix}Best fitness hyperparameters are printed below.\n"
             )
             LOGGER.info("\n" + header)
-            data = {k: float(x[best_idx, i + 1]) for i, k in enumerate(self.space.keys())}
+            data = {
+                k: float(x[best_idx, i + 1]) for i, k in enumerate(self.space.keys())
+            }
             yaml_save(
                 self.tune_dir / "best_hyperparameters.yaml",
                 data=data,

@@ -31,7 +31,9 @@ class SegmentationTrainer(yolo.detect.DetectionTrainer):
 
     def get_model(self, cfg=None, weights=None, verbose=True):
         """Return SegmentationModel initialized with specified config and weights."""
-        model = SegmentationModel(cfg, ch=3, nc=self.data["nc"], verbose=verbose and RANK == -1)
+        model = SegmentationModel(
+            cfg, ch=3, nc=self.data["nc"], verbose=verbose and RANK == -1
+        )
         if weights:
             model.load(weights)
 
@@ -41,7 +43,10 @@ class SegmentationTrainer(yolo.detect.DetectionTrainer):
         """Return an instance of SegmentationValidator for validation of YOLO model."""
         self.loss_names = "box_loss", "seg_loss", "cls_loss", "dfl_loss"
         return yolo.segment.SegmentationValidator(
-            self.test_loader, save_dir=self.save_dir, args=copy(self.args), _callbacks=self.callbacks
+            self.test_loader,
+            save_dir=self.save_dir,
+            args=copy(self.args),
+            _callbacks=self.callbacks,
         )
 
     def plot_training_samples(self, batch, ni):
@@ -59,4 +64,6 @@ class SegmentationTrainer(yolo.detect.DetectionTrainer):
 
     def plot_metrics(self):
         """Plots training/val metrics."""
-        plot_results(file=self.csv, segment=True, on_plot=self.on_plot)  # save results.png
+        plot_results(
+            file=self.csv, segment=True, on_plot=self.on_plot
+        )  # save results.png

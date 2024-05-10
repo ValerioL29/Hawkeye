@@ -33,7 +33,11 @@ from ultralytics.nn.autobackend import AutoBackend
 from ultralytics.utils import LOGGER, TQDM, callbacks, colorstr, emojis
 from ultralytics.utils.checks import check_imgsz
 from ultralytics.utils.ops import Profile
-from ultralytics.utils.torch_utils import de_parallel, select_device, smart_inference_mode
+from ultralytics.utils.torch_utils import (
+    de_parallel,
+    select_device,
+    smart_inference_mode,
+)
 
 
 class BaseValidator:
@@ -65,7 +69,9 @@ class BaseValidator:
         callbacks (dict): Dictionary to store various callback functions.
     """
 
-    def __init__(self, dataloader=None, save_dir=None, pbar=None, args=None, _callbacks=None):
+    def __init__(
+        self, dataloader=None, save_dir=None, pbar=None, args=None, _callbacks=None
+    ):
         """
         Initializes a BaseValidator instance.
 
@@ -91,10 +97,17 @@ class BaseValidator:
         self.nc = None
         self.iouv = None
         self.jdict = None
-        self.speed = {"preprocess": 0.0, "inference": 0.0, "loss": 0.0, "postprocess": 0.0}
+        self.speed = {
+            "preprocess": 0.0,
+            "inference": 0.0,
+            "loss": 0.0,
+            "postprocess": 0.0,
+        }
 
         self.save_dir = save_dir or get_save_dir(self.args)
-        (self.save_dir / "labels" if self.args.save_txt else self.save_dir).mkdir(parents=True, exist_ok=True)
+        (self.save_dir / "labels" if self.args.save_txt else self.save_dir).mkdir(
+            parents=True, exist_ok=True
+        )
         if self.args.conf is None:
             self.args.conf = 0.001  # default conf=0.001
         self.args.imgsz = check_imgsz(self.args.imgsz, max_dim=1)
@@ -117,7 +130,9 @@ class BaseValidator:
             model = model.half() if self.args.half else model.float()
             # self.model = model
             self.loss = torch.zeros_like(trainer.loss_items, device=trainer.device)
-            self.args.plots &= trainer.stopper.possible_stop or (trainer.epoch == trainer.epochs - 1)
+            self.args.plots &= trainer.stopper.possible_stop or (
+                trainer.epoch == trainer.epochs - 1
+            )
             model.eval()
         else:
             callbacks.add_integration_callbacks(self)
@@ -137,24 +152,36 @@ class BaseValidator:
                 self.args.batch = model.batch_size
             elif not pt and not jit:
                 self.args.batch = 1  # export.py models default to batch-size 1
-                LOGGER.info(f"Forcing batch=1 square inference (1,3,{imgsz},{imgsz}) for non-PyTorch models")
+                LOGGER.info(
+                    f"Forcing batch=1 square inference (1,3,{imgsz},{imgsz}) for non-PyTorch models"
+                )
 
             if str(self.args.data).split(".")[-1] in {"yaml", "yml"}:
                 self.data = check_det_dataset(self.args.data)
             elif self.args.task == "classify":
                 self.data = check_cls_dataset(self.args.data, split=self.args.split)
             else:
-                raise FileNotFoundError(emojis(f"Dataset '{self.args.data}' for task={self.args.task} not found ❌"))
+                raise FileNotFoundError(
+                    emojis(
+                        f"Dataset '{self.args.data}' for task={self.args.task} not found ❌"
+                    )
+                )
 
             if self.device.type in {"cpu", "mps"}:
-                self.args.workers = 0  # faster CPU val as time dominated by inference, not dataloading
+                self.args.workers = (
+                    0  # faster CPU val as time dominated by inference, not dataloading
+                )
             if not pt:
                 self.args.rect = False
             self.stride = model.stride  # used in get_dataloader() for padding
-            self.dataloader = self.dataloader or self.get_dataloader(self.data.get(self.args.split), self.args.batch)
+            self.dataloader = self.dataloader or self.get_dataloader(
+                self.data.get(self.args.split), self.args.batch
+            )
 
             model.eval()
-            model.warmup(imgsz=(1 if pt else self.args.batch, 3, imgsz, imgsz))  # warmup
+            model.warmup(
+                imgsz=(1 if pt else self.args.batch, 3, imgsz, imgsz)
+            )  # warmup
 
         self.run_callbacks("on_val_start")
         dt = (
@@ -194,14 +221,26 @@ class BaseValidator:
             self.run_callbacks("on_val_batch_end")
         stats = self.get_stats()
         self.check_stats(stats)
-        self.speed = dict(zip(self.speed.keys(), (x.t / len(self.dataloader.dataset) * 1e3 for x in dt)))
+        self.speed = dict(
+            zip(
+                self.speed.keys(),
+                (x.t / len(self.dataloader.dataset) * 1e3 for x in dt),
+            )
+        )
         self.finalize_metrics()
         self.print_results()
         self.run_callbacks("on_val_end")
         if self.training:
             model.float()
-            results = {**stats, **trainer.label_loss_items(self.loss.cpu() / len(self.dataloader), prefix="val")}
-            return {k: round(float(v), 5) for k, v in results.items()}  # return results as 5 decimal place floats
+            results = {
+                **stats,
+                **trainer.label_loss_items(
+                    self.loss.cpu() / len(self.dataloader), prefix="val"
+                ),
+            }
+            return {
+                k: round(float(v), 5) for k, v in results.items()
+            }  # return results as 5 decimal place floats
         else:
             LOGGER.info(
                 "Speed: %.1fms preprocess, %.1fms inference, %.1fms loss, %.1fms postprocess per image"
@@ -242,19 +281,29 @@ class BaseValidator:
 
                 cost_matrix = iou * (iou >= threshold)
                 if cost_matrix.any():
-                    labels_idx, detections_idx = scipy.optimize.linear_sum_assignment(cost_matrix, maximize=True)
+                    labels_idx, detections_idx = scipy.optimize.linear_sum_assignment(
+                        cost_matrix, maximize=True
+                    )
                     valid = cost_matrix[labels_idx, detections_idx] > 0
                     if valid.any():
                         correct[detections_idx[valid], i] = True
             else:
-                matches = np.nonzero(iou >= threshold)  # IoU > threshold and classes match
+                matches = np.nonzero(
+                    iou >= threshold
+                )  # IoU > threshold and classes match
                 matches = np.array(matches).T
                 if matches.shape[0]:
                     if matches.shape[0] > 1:
-                        matches = matches[iou[matches[:, 0], matches[:, 1]].argsort()[::-1]]
-                        matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
+                        matches = matches[
+                            iou[matches[:, 0], matches[:, 1]].argsort()[::-1]
+                        ]
+                        matches = matches[
+                            np.unique(matches[:, 1], return_index=True)[1]
+                        ]
                         # matches = matches[matches[:, 2].argsort()[::-1]]
-                        matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+                        matches = matches[
+                            np.unique(matches[:, 0], return_index=True)[1]
+                        ]
                     correct[matches[:, 1].astype(int), i] = True
         return torch.tensor(correct, dtype=torch.bool, device=pred_classes.device)
 
@@ -269,7 +318,9 @@ class BaseValidator:
 
     def get_dataloader(self, dataset_path, batch_size):
         """Get data loader from dataset path and batch size."""
-        raise NotImplementedError("get_dataloader function not implemented for this validator")
+        raise NotImplementedError(
+            "get_dataloader function not implemented for this validator"
+        )
 
     def build_dataset(self, img_path):
         """Build dataset."""

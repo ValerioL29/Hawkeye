@@ -28,7 +28,9 @@ class SegmentationValidator(DetectionValidator):
         ```
     """
 
-    def __init__(self, dataloader=None, save_dir=None, pbar=None, args=None, _callbacks=None):
+    def __init__(
+        self, dataloader=None, save_dir=None, pbar=None, args=None, _callbacks=None
+    ):
         """Initialize SegmentationValidator and set task to 'segment', metrics to SegmentMetrics."""
         super().__init__(dataloader, save_dir, pbar, args, _callbacks)
         self.plot_masks = None
@@ -81,7 +83,9 @@ class SegmentationValidator(DetectionValidator):
             max_det=self.args.max_det,
             nc=self.nc,
         )
-        proto = preds[1][-1] if len(preds[1]) == 3 else preds[1]  # second output is len 3 if pt, but only 1 if exported
+        proto = (
+            preds[1][-1] if len(preds[1]) == 3 else preds[1]
+        )  # second output is len 3 if pt, but only 1 if exported
         return p, proto
 
     def _prepare_batch(self, si, batch):
@@ -94,7 +98,9 @@ class SegmentationValidator(DetectionValidator):
     def _prepare_pred(self, pred, pbatch, proto):
         """Prepares a batch for training or inference by processing images and targets."""
         predn = super()._prepare_pred(pred, pbatch)
-        pred_masks = self.process(proto, pred[:, 6:], pred[:, :4], shape=pbatch["imgsz"])
+        pred_masks = self.process(
+            proto, pred[:, 6:], pred[:, :4], shape=pbatch["imgsz"]
+        )
         return predn, pred_masks
 
     def update_metrics(self, preds, batch):
@@ -117,7 +123,9 @@ class SegmentationValidator(DetectionValidator):
                     for k in self.stats.keys():
                         self.stats[k].append(stat[k])
                     if self.args.plots:
-                        self.confusion_matrix.process_batch(detections=None, gt_bboxes=bbox, gt_cls=cls)
+                        self.confusion_matrix.process_batch(
+                            detections=None, gt_bboxes=bbox, gt_cls=cls
+                        )
                 continue
 
             # Masks
@@ -133,7 +141,13 @@ class SegmentationValidator(DetectionValidator):
             if nl:
                 stat["tp"] = self._process_batch(predn, bbox, cls)
                 stat["tp_m"] = self._process_batch(
-                    predn, bbox, cls, pred_masks, gt_masks, self.args.overlap_mask, masks=True
+                    predn,
+                    bbox,
+                    cls,
+                    pred_masks,
+                    gt_masks,
+                    self.args.overlap_mask,
+                    masks=True,
                 )
                 if self.args.plots:
                     self.confusion_matrix.process_batch(predn, bbox, cls)
@@ -161,7 +175,16 @@ class SegmentationValidator(DetectionValidator):
         self.metrics.speed = self.speed
         self.metrics.confusion_matrix = self.confusion_matrix
 
-    def _process_batch(self, detections, gt_bboxes, gt_cls, pred_masks=None, gt_masks=None, overlap=False, masks=False):
+    def _process_batch(
+        self,
+        detections,
+        gt_bboxes,
+        gt_cls,
+        pred_masks=None,
+        gt_masks=None,
+        overlap=False,
+        masks=False,
+    ):
         """
         Return correct prediction matrix.
 
@@ -179,9 +202,17 @@ class SegmentationValidator(DetectionValidator):
                 gt_masks = gt_masks.repeat(nl, 1, 1)  # shape(1,640,640) -> (n,640,640)
                 gt_masks = torch.where(gt_masks == index, 1.0, 0.0)
             if gt_masks.shape[1:] != pred_masks.shape[1:]:
-                gt_masks = F.interpolate(gt_masks[None], pred_masks.shape[1:], mode="bilinear", align_corners=False)[0]
+                gt_masks = F.interpolate(
+                    gt_masks[None],
+                    pred_masks.shape[1:],
+                    mode="bilinear",
+                    align_corners=False,
+                )[0]
                 gt_masks = gt_masks.gt_(0.5)
-            iou = mask_iou(gt_masks.view(gt_masks.shape[0], -1), pred_masks.view(pred_masks.shape[0], -1))
+            iou = mask_iou(
+                gt_masks.view(gt_masks.shape[0], -1),
+                pred_masks.view(pred_masks.shape[0], -1),
+            )
         else:  # boxes
             iou = box_iou(gt_bboxes, detections[:, :4])
 
@@ -205,8 +236,14 @@ class SegmentationValidator(DetectionValidator):
         """Plots batch predictions with masks and bounding boxes."""
         plot_images(
             batch["img"],
-            *output_to_target(preds[0], max_det=15),  # not set to self.args.max_det due to slow plotting speed
-            torch.cat(self.plot_masks, dim=0) if len(self.plot_masks) else self.plot_masks,
+            *output_to_target(
+                preds[0], max_det=15
+            ),  # not set to self.args.max_det due to slow plotting speed
+            (
+                torch.cat(self.plot_masks, dim=0)
+                if len(self.plot_masks)
+                else self.plot_masks
+            ),
             paths=batch["im_file"],
             fname=self.save_dir / f"val_batch{ni}_pred.jpg",
             names=self.names,
@@ -250,9 +287,13 @@ class SegmentationValidator(DetectionValidator):
     def eval_json(self, stats):
         """Return COCO-style object detection evaluation metrics."""
         if self.args.save_json and self.is_coco and len(self.jdict):
-            anno_json = self.data["path"] / "annotations/instances_val2017.json"  # annotations
+            anno_json = (
+                self.data["path"] / "annotations/instances_val2017.json"
+            )  # annotations
             pred_json = self.save_dir / "predictions.json"  # predictions
-            LOGGER.info(f"\nEvaluating pycocotools mAP using {pred_json} and {anno_json}...")
+            LOGGER.info(
+                f"\nEvaluating pycocotools mAP using {pred_json} and {anno_json}..."
+            )
             try:  # https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocoEvalDemo.ipynb
                 check_requirements("pycocotools>=2.0.6")
                 from pycocotools.coco import COCO  # noqa
@@ -261,17 +302,23 @@ class SegmentationValidator(DetectionValidator):
                 for x in anno_json, pred_json:
                     assert x.is_file(), f"{x} file not found"
                 anno = COCO(str(anno_json))  # init annotations api
-                pred = anno.loadRes(str(pred_json))  # init predictions api (must pass string, not Path)
-                for i, eval in enumerate([COCOeval(anno, pred, "bbox"), COCOeval(anno, pred, "segm")]):
+                pred = anno.loadRes(
+                    str(pred_json)
+                )  # init predictions api (must pass string, not Path)
+                for i, eval in enumerate(
+                    [COCOeval(anno, pred, "bbox"), COCOeval(anno, pred, "segm")]
+                ):
                     if self.is_coco:
-                        eval.params.imgIds = [int(Path(x).stem) for x in self.dataloader.dataset.im_files]  # im to eval
+                        eval.params.imgIds = [
+                            int(Path(x).stem) for x in self.dataloader.dataset.im_files
+                        ]  # im to eval
                     eval.evaluate()
                     eval.accumulate()
                     eval.summarize()
                     idx = i * 4 + 2
-                    stats[self.metrics.keys[idx + 1]], stats[self.metrics.keys[idx]] = eval.stats[
-                        :2
-                    ]  # update mAP50-95 and mAP50
+                    stats[self.metrics.keys[idx + 1]], stats[self.metrics.keys[idx]] = (
+                        eval.stats[:2]
+                    )  # update mAP50-95 and mAP50
             except Exception as e:
                 LOGGER.warning(f"pycocotools unable to run: {e}")
         return stats
