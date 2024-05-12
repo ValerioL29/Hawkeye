@@ -45,11 +45,11 @@ from ultralytics.nn.modules import (
     Segment,
     WorldDetect,
 )
-from ultralytics.utils.loss import v8DetectionLoss, v8SegmentationLoss
 from ultralytics.utils.torch_utils import (
     make_divisible, initialize_weights, intersect_dicts,
 )
 
+from hawkeye.core.loss import MultitaskDetectionLoss, MultitaskSegmentationLoss
 from hawkeye.core.utils import load_yaml_model_config, model_info
 from hawkeye.utils import logger as LOGGER
 
@@ -182,11 +182,6 @@ def parse_task_output_layer(
     max_channels = float("inf")
     nc = d['nc']
 
-    if verbose:
-        LOGGER.info(
-            f"\n{'':>3}{'from':>20}{'n':>3}{'params':>10}  {'module':<45}{'arguments':<30}"
-        )
-
     save, c2 = [], ch[-1]  # layers, savelist, ch out
     (f, n, m, args) = d["head"]  # from, number, module, args
     i = module_idx  # Output layer index is 23 in the model
@@ -207,9 +202,7 @@ def parse_task_output_layer(
     m_.i, m_.f, m_.type = i, f, t  # attach index, 'from' index, type
 
     if verbose:
-        LOGGER.info(
-            f"{i:>3}{str(f):>20}{n_:>3}{m.np:10.0f}  {t:<45}{str(args):<30}"
-        )  # print
+        LOGGER.info(f"{i:>3}{str(f):>20}{n_:>3}{m.np:10.0f}  {t:<45}{str(args):<30}")  # print# print
     save.extend(
         x % i for x in ([f] if isinstance(f, int) else f) if x != -1
     )  # append to savelist
@@ -300,8 +293,7 @@ class MultitaskModel(BaseModel):
 
         # Done initializing the model, log the model info if set to verbose
         if verbose:
-            full_model_info = self.info(detailed=False, verbose=True)
-            LOGGER.info(f"Model Summary: {full_model_info}\n")
+            _ = self.info(detailed=False, verbose=True)
 
     def info(self, detailed=False, verbose=True, imgsz=1280):
         """Print model information."""
@@ -347,8 +339,9 @@ class MultitaskModel(BaseModel):
                 f"Transferred {acc_csd_and_state_dict['csd']}/{acc_csd_and_state_dict['state_dict']} items from "
                 f"pretrained weights"
             )
-            LOGGER.debug(f"Loaded backbone and head: {self.model}")
-            LOGGER.debug(f"Loaded task heads: {self.task_layers}")
+            LOGGER.info(f"Model config: {self.args}")
+        # Initialize the model criterion
+        self.criterion = self.init_criterion()
         return self
 
     def _predict_once(self, x, profile=False, visualize=False, embed=None):
@@ -393,11 +386,8 @@ class MultitaskModel(BaseModel):
         criterion = dict()
         for task_name, task_layer_obj in self.task_layers.items():
             # Only Detection and Segmentation tasks are supported
-            criterion[task_name] = v8DetectionLoss(
-                nn.Sequential(*self.model, task_layer_obj['fc'])
-            ) if task_name == "detect" else v8SegmentationLoss(
-                nn.Sequential(*self.model, task_layer_obj['fc'])
-            )
+            criterion[task_name] = MultitaskDetectionLoss(self, task_name) if task_name == "detect" \
+                else MultitaskSegmentationLoss(self, task_name)
         # end for
         return criterion
 
