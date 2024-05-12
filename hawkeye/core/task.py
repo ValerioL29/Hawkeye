@@ -47,7 +47,7 @@ from ultralytics.nn.modules import (
 )
 from ultralytics.utils.loss import v8DetectionLoss, v8SegmentationLoss
 from ultralytics.utils.torch_utils import (
-    make_divisible, initialize_weights,
+    make_divisible, initialize_weights, intersect_dicts,
 )
 
 from hawkeye.core.utils import load_yaml_model_config, model_info
@@ -220,7 +220,7 @@ def parse_task_output_layer(
 class MultitaskModel(BaseModel):
     def __init__(
             self,
-            cfg: Union[str, Path] = "yolov8n.yaml",
+            cfg: Union[str, Path, dict] = "yolov8n.yaml",
             ch: int = 3, nc: int = None,
             verbose: bool = True
     ):  # model, input channels, number of classes
@@ -233,6 +233,7 @@ class MultitaskModel(BaseModel):
         self.tasks_dict: dict = self.yaml['tasks']
         self.inplace = self.yaml.get("inplace", True)
         self.extra_head = self.yaml.get("extra_head", False)
+        self.criterion = None
 
         # Define model
         #
@@ -299,11 +300,56 @@ class MultitaskModel(BaseModel):
 
         # Done initializing the model, log the model info if set to verbose
         if verbose:
-            full_model = nn.Sequential(self.model, *[task['fc'] for task in self.task_layers.values()])
-            LOGGER.info(f"Model Summary: {model_info(full_model)}\n")
+            full_model_info = self.info(detailed=False, verbose=True)
+            LOGGER.info(f"Model Summary: {full_model_info}\n")
 
-        # Initialize criterion
-        self.criterion = self.init_criterion()
+    def info(self, detailed=False, verbose=True, imgsz=1280):
+        """Print model information."""
+        full_model = nn.Sequential(self.model, *[task['fc'] for task in self.task_layers.values()])
+        return model_info(full_model, detailed=False, verbose=True, imgsz=1280)
+
+    def load(self, weights, verbose=True):
+        """
+        Load the weights into the model.
+
+        Args:
+            weights (dict | torch.nn.Module): The pre-trained weights to be loaded.
+            verbose (bool, optional): Whether to log the transfer progress. Defaults to True.
+        """
+        def load_state_dict_into_module(m, loaded_module):
+            """Load the state_dict into the module."""
+            local_csd = loaded_module.float().state_dict()  # checkpoint state_dict as FP32
+            intersected_csd = intersect_dicts(local_csd, m.state_dict())  # intersect
+            m.load_state_dict(intersected_csd, strict=False)  # load
+            return len(intersected_csd), len(m.state_dict())
+
+        # weights is a dictionary of task_name: TaskModel
+        backbone_and_head_loaded_flag = False
+        acc_csd_and_state_dict = dict(csd=0, state_dict=0)
+        for task_name, task_model in weights.items():
+            loaded_model = task_model.model
+            if not backbone_and_head_loaded_flag:
+                # Load backbone and head
+                csd_len_bnh, state_dict_len_bnh = load_state_dict_into_module(self.model, loaded_model[:22])
+                csd_len_out, state_dict_len_out = load_state_dict_into_module(
+                    self.task_layers[task_name]['fc'], loaded_model[-1])
+                acc_csd_and_state_dict['csd'] += csd_len_bnh + csd_len_out
+                acc_csd_and_state_dict['state_dict'] += state_dict_len_bnh + state_dict_len_out
+            else:
+                csd_len_out, state_dict_len_out = load_state_dict_into_module(
+                    self.task_layers[task_name]['fc'], loaded_model[-1])
+                # Update the accumulated loaded values
+                acc_csd_and_state_dict['csd'] += csd_len_out
+                acc_csd_and_state_dict['state_dict'] += state_dict_len_out
+        # End loading
+        if verbose:
+            LOGGER.info(
+                f"Transferred {acc_csd_and_state_dict['csd']}/{acc_csd_and_state_dict['state_dict']} items from "
+                f"pretrained weights"
+            )
+            LOGGER.debug(f"Loaded backbone and head: {self.model}")
+            LOGGER.debug(f"Loaded task heads: {self.task_layers}")
+        return self
 
     def _predict_once(self, x, profile=False, visualize=False, embed=None):
         """
@@ -363,6 +409,10 @@ class MultitaskModel(BaseModel):
             batch (dict): Batch to compute loss on
             preds (torch.Tensor | List[torch.Tensor]): Predictions.
         """
+        if not hasattr(self, "criterion"):
+            # Initialize criterion
+            self.criterion = self.init_criterion()
+
         preds = self.forward(batch["img"]) if preds is None else preds
 
         # Compute loss for each task
