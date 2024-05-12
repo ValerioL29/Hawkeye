@@ -1,6 +1,19 @@
 import os
 from pathlib import Path
 
+import logging
+from rich.logging import RichHandler
+
+# Set up logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[RichHandler(rich_tracebacks=True)]
+)
+logger = logging.getLogger("rich")
+
+# Set up directories
 # Directory paths
 ROOT_DIR = Path(os.getcwd())
 

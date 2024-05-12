@@ -1,28 +1,14 @@
-from PIL import Image
 from rich import print
+
 from ultralytics import YOLO
-from ultralytics.engine.results import Results
 
-from hawkeye.utils import MODELS_DIR, DATA_DIR, OUTPUTS_DIR
+from hawkeye.utils import MODELS_DIR
+from hawkeye.core.task import MultitaskModel
 
-# Build a YOLOv9c model from scratch
-# model = YOLO('yolov9c.yaml')
+model = YOLO(MODELS_DIR / "cfg" / "yolov8" / "yolov8n.yaml", verbose=True)
+print(model.model.args)
 
-# Build a YOLOv9c model from config file and transferring weights from a pre-trained model
-# This is the recommended way to load a model for training
-model = YOLO(MODELS_DIR / "cfg" / "yolov9" / "yolov9c-seg.yaml") \
-    .load(MODELS_DIR / "yolov9" / "yolov9c-seg.pt")
-
-print(f"Model info: {model.info()}")
-
-model_ret = model.train(
-    data=DATA_DIR / "lane_labels_trainval_new" / "lane.yaml",
-    epochs=1,
-    imgsz=(1280, 720),
-    amp=False,
-    device="mps"
+multi_model = MultitaskModel(
+    cfg=MODELS_DIR / "cfg" / "yolov8" / "yolov8n-multi.yaml",
+    ch=3
 )
-
-# /Users/ken/miniconda3/envs/he/lib/python3.9/site-packages/ultralytics/data
-# Display model information (optional)
-# p
