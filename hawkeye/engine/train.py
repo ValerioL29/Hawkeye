@@ -2,33 +2,34 @@
 
 import math
 import random
-from copy import copy
 
-import numpy as np
-import torch.nn as nn
+import torch
+from torch import nn
+from ultralytics.data import build_dataloader
+from ultralytics.data.build import InfiniteDataLoader
+from ultralytics.utils import RANK
+from ultralytics.utils.plotting import plot_images
+from ultralytics.utils.torch_utils import torch_distributed_zero_first
 
-from ultralytics.data import build_dataloader, build_yolo_dataset
-from ultralytics.engine.trainer import BaseTrainer
-from ultralytics.models import yolo
-from ultralytics.nn.tasks import DetectionModel
-from ultralytics.utils import LOGGER, RANK
-from ultralytics.utils.plotting import plot_images, plot_labels, plot_results
-from ultralytics.utils.torch_utils import de_parallel, torch_distributed_zero_first
+from hawkeye.core.task import MultitaskModel
+from hawkeye.data.dataset import build_holo_dataset
+from hawkeye.engine.base import BaseTrainer
+from hawkeye.utils import logger as LOGGER
 
 
 class MultitaskTrainer(BaseTrainer):
     """
-    A class extending the BaseTrainer class for training based on a detection model.
-
-    Example:
-        ```python
-        from ultralytics.models.yolo.detect import DetectionTrainer
-
-        args = dict(model='yolov8n.pt', data='coco8.yaml', epochs=3)
-        trainer = DetectionTrainer(overrides=args)
-        trainer.train()
-        ```
+    A class extending the BaseTrainer class for training based on a multitask model.
     """
+    multitask_model: MultitaskModel
+    train_loader: dict[str, InfiniteDataLoader]
+    test_loader: dict[str, InfiniteDataLoader]
+
+    def set_multitask_model(self, model: MultitaskModel):
+        """Sets the model for the trainer."""
+        _ = model.move_to_device(device=self.device)
+        self.multitask_model = model
+        return self
 
     def build_dataset(self, img_path, mode="train", batch=None):
         """
@@ -39,34 +40,48 @@ class MultitaskTrainer(BaseTrainer):
             mode (str): `train` mode or `val` mode, users are able to customize different augmentations for each mode.
             batch (int, optional): Size of batches, this is for `rect`. Defaults to None.
         """
-        gs = max(int(de_parallel(self.model).stride.max() if self.model else 0), 32)
-        return build_yolo_dataset(
-            self.args,
-            img_path,
-            batch,
-            self.data,
-            mode=mode,
-            rect=mode == "val",
-            stride=gs,
-        )
+        gs = torch.tensor([
+          task_object['stride'].max()
+          for _, task_object in self.multitask_model.task_layers.items()
+        ]).max().item()  # grid size
+
+        return {
+            task_name: build_holo_dataset(
+                self.args,
+                img_path,
+                batch,
+                self.data,
+                task=task_name,
+                mode=mode,
+                rect=mode == "val",
+                stride=int(max(gs, 32)),
+            )
+            for task_name in self.multitask_model.task_layers.keys()
+        }
 
     def get_dataloader(self, dataset_path, batch_size=16, rank=0, mode="train"):
         """Construct and return dataloader."""
         assert mode in {"train", "val"}, f"Mode must be 'train' or 'val', not {mode}."
-        with torch_distributed_zero_first(
-            rank
-        ):  # init dataset *.cache only once if DDP
-            dataset = self.build_dataset(dataset_path, mode, batch_size)
-        shuffle = mode == "train"
-        if getattr(dataset, "rect", False) and shuffle:
-            LOGGER.warning(
-                "WARNING ⚠️ 'rect=True' is incompatible with DataLoader shuffle, setting shuffle=False"
-            )
-            shuffle = False
-        workers = self.args.workers if mode == "train" else self.args.workers * 2
-        return build_dataloader(
-            dataset, batch_size, workers, shuffle, rank
-        )  # return dataloader
+        # init dataset *.cache only once if DDP
+        with torch_distributed_zero_first(rank):
+            datasets = self.build_dataset(dataset_path, mode, batch_size)
+
+        def ensemble_dataloader(dataset):
+            shuffle = mode == "train"
+            if getattr(dataset, "rect", False) and shuffle:
+                LOGGER.warning(
+                    "WARNING ⚠️ 'rect=True' is incompatible with DataLoader shuffle, setting shuffle=False"
+                )
+                shuffle = False
+            workers = self.args.workers if mode == "train" else self.args.workers * 2
+            return build_dataloader(
+                dataset, batch_size, workers, shuffle, rank
+            )  # return dataloader
+
+        return {
+            task: ensemble_dataloader(dataset)
+            for task, dataset in datasets.items()
+        }
 
     def preprocess_batch(self, batch):
         """Preprocesses a batch of images by scaling and converting to float."""
@@ -100,24 +115,59 @@ class MultitaskTrainer(BaseTrainer):
         self.model.nc = self.data["nc"]  # attach number of classes to model
         self.model.names = self.data["names"]  # attach class names to model
         self.model.args = self.args  # attach hyperparameters to model
-        # TODO: self.model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc
 
     def get_model(self, cfg=None, weights=None, verbose=True):
         """Return a YOLO detection model."""
-        model = DetectionModel(cfg, nc=self.data["nc"], verbose=verbose and RANK == -1)
-        if weights:
-            model.load(weights)
-        return model
+        raise NotImplementedError("'get_model()' function is not implemented in MultitaskTrainer. Please use "
+                                  "'model.load()' to load a pre-trained model.")
+
+    # def get_dataset(self):
+    #     """Return a YOLO dataset."""
+    #     raise NotImplementedError("'get_dataset()' function is not implemented in MultitaskTrainer. Please use "
+    #                               "'build_dataset()' to build a dataset.")
+
+    def prepare_dataloaders(self, world_size: int = 1, verbose: bool = True):
+        """Prepare dataloaders."""
+        train_img_path, test_img_path = self.get_dataset()
+        batch_size = self.batch_size // max(world_size, 1)
+        train_loader = self.get_dataloader(
+            train_img_path, batch_size=batch_size, rank=RANK, mode="train"
+        )
+        test_loader = self.get_dataloader(
+            test_img_path,
+            batch_size=batch_size * 2,  # For Detect and Segment
+            rank=-1,
+            mode="val",
+        )
+        return train_loader, test_loader
+
+    def multitask_train(self, world_size: int = 1, verbose: bool = True):
+        """Trains the YOLO model."""
+
+        # TODO: Multitask Setup Dataloaders
+        self.train_loader, self.test_loader = self.prepare_dataloaders(world_size, verbose)
+        LOGGER.info(f"Train: {len(self.train_loader)} | Test: {len(self.test_loader)}")
+        # pbar = enumerate(self.train_loader)
+        #
+        # sample_batch = next(iter(self.train_loader))
+        # preprocessed_batch: dict = self.preprocess_batch(sample_batch)
+        # LOGGER.info(preprocessed_batch.keys())
+        # LOGGER.info(f"Element types: {[type(v) for v in preprocessed_batch.values()]}")
+        # LOGGER.info(self.multitask_model(preprocessed_batch))
+
+        # TODO: Multitask Setup Optimizers
+
+        # TODO: Multitask Forward
+
+        # TODO: Multitask Backward
+
+        # TODO: Multitask Validation
+
+        return
 
     def get_validator(self):
-        """Returns a DetectionValidator for YOLO model validation."""
-        self.loss_names = "box_loss", "cls_loss", "dfl_loss"
-        return yolo.detect.DetectionValidator(
-            self.test_loader,
-            save_dir=self.save_dir,
-            args=copy(self.args),
-            _callbacks=self.callbacks,
-        )
+        """Returns a MultitaskValidator for HOLO model validation."""
+        raise NotImplementedError("'get_validator()' function is not implemented in MultitaskTrainer.")
 
     def label_loss_items(self, loss_items=None, prefix="train"):
         """
@@ -158,18 +208,8 @@ class MultitaskTrainer(BaseTrainer):
 
     def plot_metrics(self):
         """Plots metrics from a CSV file."""
-        plot_results(file=self.csv, on_plot=self.on_plot)  # save results.png
+        raise NotImplementedError("'plot_metrics()' function is not implemented in MultitaskTrainer.")
 
     def plot_training_labels(self):
         """Create a labeled training plot of the YOLO model."""
-        boxes = np.concatenate(
-            [lb["bboxes"] for lb in self.train_loader.dataset.labels], 0
-        )
-        cls = np.concatenate([lb["cls"] for lb in self.train_loader.dataset.labels], 0)
-        plot_labels(
-            boxes,
-            cls.squeeze(),
-            names=self.data["names"],
-            save_dir=self.save_dir,
-            on_plot=self.on_plot,
-        )
+        raise NotImplementedError("'plot_training_labels()' function is not implemented in MultitaskTrainer.")

@@ -1,24 +1,50 @@
-from rich import print
+import logging
+from rich.logging import RichHandler
+from pathlib import Path
 from ultralytics import YOLO
 
-from hawkeye.utils import MODELS_DIR, DATA_DIR, ASSETS_DIR
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",  # %(asctime)s [%(levelname)s] %(message)s
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[RichHandler(rich_tracebacks=True)]
+)
+logger = logging.getLogger("rich")
 
-# Build a YOLOv9c model from scratch
-# model = YOLO('yolov9c.yaml')
+ROOT_DIR = Path("/public/home/acsy8g9pue/")
+MODEL_DIR = ROOT_DIR / "models"
+DATA_DIR = ROOT_DIR / "datasets" / "bdd100k"
 
-# Build a YOLOv9c model from config file and transferring weights from a pre-trained model
-# This is the recommended way to load a model for training
-model = YOLO(MODELS_DIR / "cfg" / "yolov9" / "yolov9c-seg.yaml") \
-    .load(MODELS_DIR / "yolov9" / "yolov9c-seg.pt")
+PROJECT_DIR = ROOT_DIR / "codes" / "ljc"
+CHECKPOINTS_DIR = PROJECT_DIR / "checkpoints"
+DATASETS_DIR = PROJECT_DIR / "datasets"
 
-print(f"Model info: {model.info()}")
+logger.info("Start training script".center(50, "="))
 
-model_ret = model.train(
-    data=DATA_DIR / "lane_labels_trainval_new" / "lane.yaml",
-    epochs=1,
-    imgsz=(1280, 720),
+dataset_name = "det_20_labels_trainval"
+model_conf = CHECKPOINTS_DIR / "cfg" / "yolov8" / "yolov8l.yaml"
+model = YOLO(model_conf).load(CHECKPOINTS_DIR / "yolov8" / "yolov8l.pt")
+
+logger.info(f"Model info: {model.info()}")
+
+model.train(
+    name="size_l_freeze_10_epochs_10_adam_single",
+    data=DATASETS_DIR / dataset_name / "detection_traindata.yaml",
+    imgsz=1280,
+    batch=-1,  # Enable auto batch
+    freeze=10,
+    single_cls=True,  # Single Classification for objects
     amp=False,
-    device="mps"
+    cache=True,  # Cache datasets in Memory
+    workers=11,  # Number of workers threads for data loading, per RANK for Multi-GPU
+    epochs=20,  # About 10 is fair enough, after 10 there's a sharp descent of performance
+    cos_lr=True,  # CosineLRScheduler
+    optimizer="Adam",
+    lr0=0.1,  # Initial learning rate
+    dropout=0.2,  # Dropout for preventing overfitting
+    plots=True,
+    device=0  # [0, 1] Multi-GPU Training
 )
 
-results = model(ASSETS_DIR / "demo" / "bus.jpg")
+logger.info("End training script".center(50, "="))

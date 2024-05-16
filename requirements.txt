@@ -1,17 +1,19 @@
 # Base
 numpy
+pandas
 
 # Model
 torch
 torchvision
-opencv-contrib-python
+opencv-python
 
 # YOLO
 ultralytics
 dill
 pillow
 
-# Logging Utils
+# Utils
 rich
+psutil
 
 # Model Export

@@ -3,6 +3,7 @@ from ultralytics.engine.results import Results
 from ultralytics.utils import ops
 
 
+# TODO: Refactor MultitaskPredictor to compat with Hawkeye
 class MultitaskPredictor(BasePredictor):
     """
     A class extending the BasePredictor class for prediction based on a detection model.

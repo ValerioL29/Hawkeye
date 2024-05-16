@@ -1,20 +1,19 @@
-from typing import Optional
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from ultralytics.utils.loss import BboxLoss
 from ultralytics.utils.ops import crop_mask, xywh2xyxy, xyxy2xywh
 from ultralytics.utils.tal import TaskAlignedAssigner, dist2bbox, make_anchors
+
+from hawkeye.utils import logger as LOGGER
 
 
 class MultitaskDetectionLoss:
     """Criterion class for computing training losses."""
 
-    def __init__(self, multitask, task: str):  # model must be de-paralleled
+    def __init__(self, multitask, task: str, device: torch.device):  # model must be de-paralleled
         """Initializes v8DetectionLoss with the model, defining model-related properties and BCE loss function."""
-        device = next(multitask.model.parameters()).device  # get model device
+        # device = next(multitask.model.parameters()).device  # get model device
         h = multitask.args  # hyperparameters
         task_head = multitask.task_layers[task]['fc']  # Detect() module
 
@@ -53,6 +52,7 @@ class MultitaskDetectionLoss:
         """Decode predicted object bounding box coordinates from anchor points and distribution."""
         if self.use_dfl:
             b, a, c = pred_dist.shape  # batch, anchors, channels
+            LOGGER.info(f"pred_dict device: {pred_dist.device}, proj device: {self.proj.device}")
             pred_dist = pred_dist.view(b, a, 4, c // 4).softmax(3).matmul(self.proj.type(pred_dist.dtype))
         return dist2bbox(pred_dist, anchor_points, xywh=False)
 
@@ -103,9 +103,10 @@ class MultitaskDetectionLoss:
                 pred_distri, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask
             )
 
-        loss[0] *= self.hyp.box  # box gain
-        loss[1] *= self.hyp.cls  # cls gain
-        loss[2] *= self.hyp.dfl  # dfl gain
+        LOGGER.info(f"Hyperparameters: {self.hyp}")
+        loss[0] *= self.hyp['box']  # box gain
+        loss[1] *= self.hyp['cls']  # cls gain
+        loss[2] *= self.hyp['dfl']  # dfl gain
 
         return loss.sum() * batch_size, loss.detach()  # loss(box, cls, dfl)
 
@@ -113,9 +114,9 @@ class MultitaskDetectionLoss:
 class MultitaskSegmentationLoss(MultitaskDetectionLoss):
     """Criterion class for computing training losses."""
 
-    def __init__(self, multitask, task: str):  # model must be de-paralleled
+    def __init__(self, multitask, task: str, device: torch.device):  # model must be de-paralleled
         """Initializes the v8SegmentationLoss class, taking a de-paralleled model as argument."""
-        super().__init__(multitask, task)
+        super().__init__(multitask, task, device)
         self.overlap = multitask.args['overlap_mask']
 
     def __call__(self, preds, batch):
@@ -194,10 +195,10 @@ class MultitaskSegmentationLoss(MultitaskDetectionLoss):
         else:
             loss[1] += (proto * 0).sum() + (pred_masks * 0).sum()  # inf sums may lead to nan loss
 
-        loss[0] *= self.hyp.box  # box gain
-        loss[1] *= self.hyp.box  # seg gain
-        loss[2] *= self.hyp.cls  # cls gain
-        loss[3] *= self.hyp.dfl  # dfl gain
+        loss[0] *= self.hyp['box']  # box gain
+        loss[1] *= self.hyp['cls']  # cls gain
+        loss[2] *= self.hyp['dfl']  # dfl gain
+        loss[2] *= self.hyp['cls']  # cls gain
 
         return loss.sum() * batch_size, loss.detach()  # loss(box, cls, dfl)
 

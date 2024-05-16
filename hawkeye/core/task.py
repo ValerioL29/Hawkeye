@@ -211,6 +211,9 @@ def parse_task_output_layer(
 
 
 class MultitaskModel(BaseModel):
+    device: torch.device
+    criterion: dict
+
     def __init__(
             self,
             cfg: Union[str, Path, dict] = "yolov8n.yaml",
@@ -226,7 +229,6 @@ class MultitaskModel(BaseModel):
         self.tasks_dict: dict = self.yaml['tasks']
         self.inplace = self.yaml.get("inplace", True)
         self.extra_head = self.yaml.get("extra_head", False)
-        self.criterion = None
 
         # Define model
         #
@@ -340,11 +342,20 @@ class MultitaskModel(BaseModel):
                 f"pretrained weights"
             )
             LOGGER.info(f"Model config: {self.args}")
-        # Initialize the model criterion
-        self.criterion = self.init_criterion()
+
         return self
 
-    def _predict_once(self, x, profile=False, visualize=False, embed=None):
+    def move_to_device(self, device: torch.device):
+        """Move the model to the specified device."""
+        # Move backbone and head
+        self.device = device
+        _ = self.model.to(device)
+        # Move task heads
+        for _, task_layer_obj in self.task_layers.items():
+            task_layer_obj['fc'].to(device)
+        return self
+
+    def _predict_once(self, x, profile=False, visualize=False, embed=None) -> dict:
         """
         Perform a forward pass through the network.
 
@@ -386,8 +397,8 @@ class MultitaskModel(BaseModel):
         criterion = dict()
         for task_name, task_layer_obj in self.task_layers.items():
             # Only Detection and Segmentation tasks are supported
-            criterion[task_name] = MultitaskDetectionLoss(self, task_name) if task_name == "detect" \
-                else MultitaskSegmentationLoss(self, task_name)
+            criterion[task_name] = MultitaskDetectionLoss(self, task_name, self.device) if task_name == "detect" \
+                else MultitaskSegmentationLoss(self, task_name, self.device)
         # end for
         return criterion
 
@@ -406,11 +417,42 @@ class MultitaskModel(BaseModel):
         preds = self.forward(batch["img"]) if preds is None else preds
 
         # Compute loss for each task
-        total_loss = torch.sum(
-            torch.stack([
-                self.criterion[task_name](preds[task_name], batch[task_name])
-                for task_name in self.tasks_dict.keys()
-            ])
-        )
+        # total_loss = torch.tensor([
+        #     self.criterion[task_name](preds[task_name], batch[task_name])
+        #     for task_name in self.tasks_dict.keys()
+        # ]).sum()
+        total_loss = self.criterion['detect'](preds['detect'], batch)
 
         return total_loss
+
+    def forward(self, x, *args, **kwargs):
+        """
+        Forward pass of the model on a single scale. Wrapper for `_forward_once` method.
+
+        Args:
+            x (torch.Tensor | dict): The input image tensor or a dict including image tensor and gt labels.
+
+        Returns:
+            (torch.Tensor): The output of the network.
+        """
+        if isinstance(x, dict):  # for cases of training and validating while training.
+            return self.loss(x, *args, **kwargs)
+        return self.predict(x, *args, **kwargs)
+
+    def predict(self, x, profile=False, visualize=False, augment=False, embed=None):
+        """
+        Perform a forward pass through the network.
+
+        Args:
+            x (torch.Tensor): The input tensor to the model.
+            profile (bool):  Print the computation time of each layer if True, defaults to False.
+            visualize (bool): Save the feature maps of the model if True, defaults to False.
+            augment (bool): Augment image during prediction, defaults to False.
+            embed (list, optional): A list of feature vectors/embeddings to return.
+
+        Returns:
+            (torch.Tensor): The last output of the model.
+        """
+        if augment:
+            return self._predict_augment(x)
+        return self._predict_once(x, profile, visualize, embed)

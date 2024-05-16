@@ -14,6 +14,7 @@ from ultralytics.utils.metrics import ConfusionMatrix, DetMetrics, box_iou
 from ultralytics.utils.plotting import output_to_target, plot_images
 
 
+# TODO: Refactor MultitaskValidator to compat with Hawkeye
 class MultitaskValidator(BaseValidator):
     """
     A class extending the BaseValidator class for validation based on a detection model.
@@ -151,7 +152,8 @@ class MultitaskValidator(BaseValidator):
             "ratio_pad": ratio_pad,
         }
 
-    def _prepare_pred(self, pred, pbatch):
+    @staticmethod
+    def _prepare_pred(pred, pbatch):
         """Prepares a batch of images and annotations for validation."""
         predn = pred.clone()
         ops.scale_boxes(
@@ -321,7 +323,8 @@ class MultitaskValidator(BaseValidator):
             on_plot=self.on_plot,
         )  # pred
 
-    def save_one_txt(self, predn, save_conf, shape, file):
+    @staticmethod
+    def save_one_txt(predn, save_conf, shape, file):
         """Save YOLO detections to a txt file in normalized coordinates in a specific format."""
         gn = torch.tensor(shape)[[1, 0, 1, 0]]  # normalization gain whwh
         for *xyxy, conf, cls in predn.tolist():

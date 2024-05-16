@@ -2,6 +2,7 @@ import os
 import json
 import logging
 from pathlib import Path
+from ultralytics.utils import TQDM
 from rich.logging import RichHandler
 
 # Set up directories
