@@ -22,7 +22,7 @@ from ultralytics.data.utils import (
 from ultralytics.utils import LOCAL_RANK, NUM_THREADS, TQDM
 from ultralytics.utils.ops import resample_segments
 
-from hawkeye.data.base import BaseDataset, verify_image_label
+from hawkeye.dedicated.data.base import BaseDataset, verify_image_label
 from hawkeye.utils import DATA_DIR, logger as LOGGER
 
 # Ultralytics dataset *.cache version, >= 1.0.0 for YOLOv8
@@ -112,7 +112,7 @@ class HOLODataset(BaseDataset):
     @staticmethod
     def multitask_img2label_paths(
             img_files, task: str,
-            prefix: Path = DATA_DIR / "multitask" / "labels"
+            prefix: Path = DATA_DIR / "dedicated" / "labels"
     ) -> tuple[list[str], str]:
         """Returns a list of label paths corresponding to the image paths."""
         sample_img = img_files[0]
@@ -129,7 +129,7 @@ class HOLODataset(BaseDataset):
         # self.data['path'] is PosixPath
         label_path = self.data['path'] / "labels"
         self.label_files, split = self.multitask_img2label_paths(self.im_files, task=self.task, prefix=label_path)
-        cache_path = (label_path / split / self.task).with_suffix(".cache")  # DATA_DIR / "multitask" / "data.cache"
+        cache_path = (label_path / split / self.task).with_suffix(".cache")  # DATA_DIR / "dedicated" / "data.cache"
 
         if not cache_path.exists():
             LOGGER.info(f"Creating cache file for '{cache_path}'")

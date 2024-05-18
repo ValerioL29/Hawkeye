@@ -49,8 +49,8 @@ from ultralytics.utils.torch_utils import (
     make_divisible, initialize_weights, intersect_dicts,
 )
 
-from hawkeye.core.loss import MultitaskDetectionLoss, MultitaskSegmentationLoss
-from hawkeye.core.utils import load_yaml_model_config, model_info
+from hawkeye.dedicated.core.loss import MultitaskDetectionLoss, MultitaskSegmentationLoss
+from hawkeye.dedicated.core.utils import load_yaml_model_config, model_info
 from hawkeye.utils import logger as LOGGER
 
 

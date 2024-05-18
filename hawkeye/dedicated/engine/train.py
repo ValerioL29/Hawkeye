@@ -8,18 +8,17 @@ from torch import nn
 from ultralytics.data import build_dataloader
 from ultralytics.data.build import InfiniteDataLoader
 from ultralytics.utils import RANK
-from ultralytics.utils.plotting import plot_images
 from ultralytics.utils.torch_utils import torch_distributed_zero_first
 
-from hawkeye.core.task import MultitaskModel
-from hawkeye.data.dataset import build_holo_dataset
-from hawkeye.engine.base import BaseTrainer
+from hawkeye.dedicated.core.task import MultitaskModel
+from hawkeye.dedicated.data.dataset import build_holo_dataset
+from hawkeye.dedicated.engine.base import BaseTrainer
 from hawkeye.utils import logger as LOGGER
 
 
 class MultitaskTrainer(BaseTrainer):
     """
-    A class extending the BaseTrainer class for training based on a multitask model.
+    A class extending the BaseTrainer class for training based on a dedicated model.
     """
     multitask_model: MultitaskModel
     train_loader: dict[str, InfiniteDataLoader]

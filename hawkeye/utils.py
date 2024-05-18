@@ -25,6 +25,10 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 OUTPUTS_DIR = ROOT_DIR / "outputs"
 os.makedirs(OUTPUTS_DIR, exist_ok=True)
 
+# Agent config directory
+AGENT_CFG_DIR = ROOT_DIR / "cfg"
+os.makedirs(AGENT_CFG_DIR, exist_ok=True)
+
 # Load config file
 try:
     with open(ROOT_DIR / "config.json", "r") as f:

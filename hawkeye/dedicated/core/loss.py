@@ -13,7 +13,7 @@ class MultitaskDetectionLoss:
 
     def __init__(self, multitask, task: str, device: torch.device):  # model must be de-paralleled
         """Initializes v8DetectionLoss with the model, defining model-related properties and BCE loss function."""
-        # device = next(multitask.model.parameters()).device  # get model device
+        # device = next(dedicated.model.parameters()).device  # get model device
         h = multitask.args  # hyperparameters
         task_head = multitask.task_layers[task]['fc']  # Detect() module
 
