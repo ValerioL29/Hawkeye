@@ -6,6 +6,7 @@ pandas
 torch
 torchvision
 opencv-python
+lap
 
 # YOLO
 ultralytics

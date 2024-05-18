@@ -1,6 +1,6 @@
 import contextlib
 from pathlib import Path
-from typing import Union
+from typing import Union, OrderedDict
 
 import torch
 from torch import nn
@@ -171,7 +171,7 @@ def parse_model(d, ch, verbose=True, use_extra_head: bool = False):  # model_dic
 
 
 def parse_task_output_layer(
-        d, ch,
+        d, ch, head_module: nn.Module,
         width: float, inplace: bool = True,
         module_idx: int = 23, verbose: bool = True
 ):  # model_dict, input_channels(3)
@@ -207,7 +207,11 @@ def parse_task_output_layer(
         x % i for x in ([f] if isinstance(f, int) else f) if x != -1
     )  # append to savelist
 
-    return m_, sorted(save)
+    layers = [
+        (str(i + 10), module)
+        for i, module in enumerate([*head_module, m_])
+    ]
+    return nn.Sequential(OrderedDict[str, nn.Module](layers)), sorted(save)
 
 
 class MultitaskModel(BaseModel):
@@ -237,11 +241,11 @@ class MultitaskModel(BaseModel):
             LOGGER.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
             self.yaml["nc"] = nc  # override YAML value
         # Load Backbone and head
-        self.model, self.save, original_ch = parse_model(
+        original_model, self.save, original_ch = parse_model(
             self.yaml, ch=ch, verbose=verbose
         )
-        # self.backbone = original_model[:10]  # 10 is the number of layers in the backbone
-        # self.head = original_model[10:]
+        self.model = original_model[:10]  # 10 is the number of layers in the backbone
+        head = original_model[10:]
         # _ = initialize_weights(self.backbone)
         # _ = initialize_weights(self.head)
 
@@ -252,14 +256,14 @@ class MultitaskModel(BaseModel):
         for i, (task_name, task_obj) in enumerate(self.tasks_dict.items()):
             # Parse task output layer
             task_fc, task_save = parse_task_output_layer(
-                task_obj, ch=original_ch, module_idx=23 + i,
+                task_obj, head_module=head, ch=original_ch, module_idx=23 + i,
                 width=width, verbose=verbose
             )
             names = {i: f"{i}" for i in range(task_obj['nc'])}
 
             # Save task layer
             self.task_layers[task_name] = dict(
-                fc=task_fc, names=names, stride=task_fc.stride
+                fc=task_fc, names=names, stride=task_fc[-1].stride
             )
             self.save.extend(task_save)
         # end for
@@ -282,11 +286,12 @@ class MultitaskModel(BaseModel):
                 return task_ret[0] if task_name != "detect" else task_ret
 
             s = 256  # 2x min stride
-            task_layer_obj['fc'].inplace = self.inplace
-            task_layer_obj['fc'].stride = torch.tensor(
+            task_head = task_layer_obj['fc'][-1]
+            task_head.inplace = self.inplace
+            task_head.stride = torch.tensor(
                 [s / x.shape[-2] for x in fwd(torch.zeros(1, ch, s, s))]
             )  # forward
-            task_layer_obj['fc'].bias_init()  # only run once
+            task_head.bias_init()  # only run once
 
         # Initialize the model weights
         _ = initialize_weights(model=self.model)
@@ -314,32 +319,48 @@ class MultitaskModel(BaseModel):
             """Load the state_dict into the module."""
             local_csd = loaded_module.float().state_dict()  # checkpoint state_dict as FP32
             intersected_csd = intersect_dicts(local_csd, m.state_dict())  # intersect
+            LOGGER.info([
+                k for k, v in local_csd.items()
+                if k not in m.state_dict() or v.shape != m.state_dict()[k].shape
+            ])
+            LOGGER.info([
+                (v.shape, m.state_dict()[k].shape) for k, v in local_csd.items()
+                if k not in m.state_dict() or v.shape != m.state_dict()[k].shape
+            ])
             m.load_state_dict(intersected_csd, strict=False)  # load
             return len(intersected_csd), len(m.state_dict())
 
         # weights is a dictionary of task_name: TaskModel
-        backbone_and_head_loaded_flag = False
-        acc_csd_and_state_dict = dict(csd=0, state_dict=0)
+        backbone_loaded_flag = False
+        acc_csd_and_state_dict = dict(csd=0, state_dict=0, holo_layers=0)
         for task_name, task_model in weights.items():
             loaded_model = task_model.model
-            if not backbone_and_head_loaded_flag:
-                # Load backbone and head
-                csd_len_bnh, state_dict_len_bnh = load_state_dict_into_module(self.model, loaded_model[:22])
-                csd_len_out, state_dict_len_out = load_state_dict_into_module(
-                    self.task_layers[task_name]['fc'], loaded_model[-1])
-                acc_csd_and_state_dict['csd'] += csd_len_bnh + csd_len_out
-                acc_csd_and_state_dict['state_dict'] += state_dict_len_bnh + state_dict_len_out
-            else:
-                csd_len_out, state_dict_len_out = load_state_dict_into_module(
-                    self.task_layers[task_name]['fc'], loaded_model[-1])
-                # Update the accumulated loaded values
-                acc_csd_and_state_dict['csd'] += csd_len_out
-                acc_csd_and_state_dict['state_dict'] += state_dict_len_out
+            if not backbone_loaded_flag:
+                # Load backbone
+                csd_len_bnh, state_dict_len_bnh = load_state_dict_into_module(self.model, loaded_model[:10])
+                acc_csd_and_state_dict['csd'] += csd_len_bnh
+                acc_csd_and_state_dict['state_dict'] += state_dict_len_bnh
+                acc_csd_and_state_dict['holo_layers'] += len(self.model)
+                backbone_loaded_flag = True
+                LOGGER.info(f"Loaded 'backbone' weights for {csd_len_bnh}/{state_dict_len_bnh} items")
+                LOGGER.info(f"Loaded 'backbone' layers: {len(self.model)}")
+
+            # Load task head
+            task_head = self.task_layers[task_name]['fc']
+            csd_len_out, state_dict_len_out = load_state_dict_into_module(task_head, loaded_model[10:])
+            # Update the accumulated loaded values
+            acc_csd_and_state_dict['csd'] += csd_len_out
+            acc_csd_and_state_dict['state_dict'] += state_dict_len_out
+            acc_csd_and_state_dict['holo_layers'] += len(task_head)
+            LOGGER.info(f"Loaded '{task_name}' weights for {len(task_head)} layers")
+            LOGGER.info(f"Loaded '{task_name}' weights for {csd_len_out}/{state_dict_len_out} items")
         # End loading
+
+        # Log the transfer progress
         if verbose:
             LOGGER.info(
                 f"Transferred {acc_csd_and_state_dict['csd']}/{acc_csd_and_state_dict['state_dict']} items from "
-                f"pretrained weights"
+                f"pretrained weights. Total layers: {acc_csd_and_state_dict['holo_layers']}"
             )
             LOGGER.info(f"Model config: {self.args}")
 
@@ -386,11 +407,21 @@ class MultitaskModel(BaseModel):
             y.append(x if m.i in self.save else None)  # save output
         # End backbone
 
-        return {
-            "detect": multi_input_fwd(x, self.task_layers["detect"]["fc"], y),
-            "drivable": multi_input_fwd(x, self.task_layers["drivable"]["fc"], y),
-            "lane": multi_input_fwd(x, self.task_layers["lane"]["fc"], y)
-        }
+        # Task heads forward
+        ret = dict()
+        for i, (task_name, task_layer) in enumerate(self.task_layers.items()):
+            yy = y.copy()  # outputs
+            xx = torch.clone(x)  # inputs
+            for mm in task_layer['fc']:
+                xx = multi_input_fwd(xx, mm, yy)
+                yy.append(xx if mm.i in self.save else None)  # save output
+            # End sub-task forward
+
+            # Save the output
+            ret[task_name] = xx
+        # End task heads forward
+
+        return ret
 
     def init_criterion(self):
         """Initialize the loss criterion for the MultitaskModel."""

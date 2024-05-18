@@ -18,16 +18,18 @@ class MultitaskPredictor(BasePredictor):
         predictor.predict_cli()
         ```
     """
+    def __call__(self, source=None, model=None, stream=False, *args, **kwargs):
+        pass
 
     def postprocess(self, preds, img, orig_imgs):
         """Post-processes predictions and returns a list of Results objects."""
         preds = ops.non_max_suppression(
             preds,
-            self.args.conf,
-            self.args.iou,
-            agnostic=self.args.agnostic_nms,
-            max_det=self.args.max_det,
-            classes=self.args.classes,
+            conf_thres=0.25,
+            iou_thres=0.7,
+            agnostic=False,
+            max_det=300,
+            classes=13,  # 1
         )
 
         if not isinstance(

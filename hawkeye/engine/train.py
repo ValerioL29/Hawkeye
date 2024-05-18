@@ -147,10 +147,10 @@ class MultitaskTrainer(BaseTrainer):
         # TODO: Multitask Setup Dataloaders
         self.train_loader, self.test_loader = self.prepare_dataloaders(world_size, verbose)
         LOGGER.info(f"Train: {len(self.train_loader)} | Test: {len(self.test_loader)}")
-        # pbar = enumerate(self.train_loader)
-        #
-        # sample_batch = next(iter(self.train_loader))
-        # preprocessed_batch: dict = self.preprocess_batch(sample_batch)
+        pbar = enumerate(self.train_loader)
+
+        sample_batch = next(iter(self.train_loader))
+        preprocessed_batch: dict = self.preprocess_batch(sample_batch)
         # LOGGER.info(preprocessed_batch.keys())
         # LOGGER.info(f"Element types: {[type(v) for v in preprocessed_batch.values()]}")
         # LOGGER.info(self.multitask_model(preprocessed_batch))
@@ -196,15 +196,7 @@ class MultitaskTrainer(BaseTrainer):
 
     def plot_training_samples(self, batch, ni):
         """Plots training samples with their annotations."""
-        plot_images(
-            images=batch["img"],
-            batch_idx=batch["batch_idx"],
-            cls=batch["cls"].squeeze(-1),
-            bboxes=batch["bboxes"],
-            paths=batch["im_file"],
-            fname=self.save_dir / f"train_batch{ni}.jpg",
-            on_plot=self.on_plot,
-        )
+        raise NotImplementedError("'plot_training_samples()' function is not implemented in MultitaskTrainer.")
 
     def plot_metrics(self):
         """Plots metrics from a CSV file."""
