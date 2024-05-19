@@ -173,9 +173,9 @@ class HOLOH:
                 frame, conf=0.3, iou=0.3, persist=True, tracker=byte_tracker_cfg)
 
             # Plot the results for visualization
-            detect_plot = detect_results[0].plot(conf=False)
-            drivable_plot = drivable_results[0].plot(conf=False, img=detect_plot)
-            lane_plot = lane_results[0].plot(conf=False, img=drivable_plot)
+            detect_plot = detect_results[0].plot(conf=False, labels=False)
+            drivable_plot = drivable_results[0].plot(conf=False, img=detect_plot, boxes=False)
+            lane_plot = lane_results[0].plot(conf=False, img=drivable_plot, boxes=False)
 
             # Display the results
             cv2.imshow(f"Hawkeye", lane_plot)
