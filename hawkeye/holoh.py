@@ -1,8 +1,9 @@
 import cv2
 import threading
 from pathlib import Path
-from typing import Union
+from typing import Union, Optional
 
+import numpy as np
 import torch
 from ultralytics import YOLO
 
@@ -140,8 +141,14 @@ class HOLOH:
 
         return True
 
-    def run_aio(self, video_or_stream: Union[str, Path, int]):
-        """Predict with the agent"""
+    def run_aio(
+            self,
+            video_or_stream: Union[str, Path, int],
+            is_blind_spot: bool = False,
+            window_name: str = "Hawkeye",
+            output_path: Optional[Union[str, Path]] = None
+    ):
+        """Predict with the agent and save the video"""
         # Check file path
         if isinstance(video_or_stream, str):
             video_or_stream = Path(video_or_stream)
@@ -157,6 +164,19 @@ class HOLOH:
         video = cv2.VideoCapture(video_source)  # Read the video file
         byte_tracker_cfg = MODELS_DIR / "cfg" / "trackers" / "bytetrack.yaml"
 
+        out = None
+        if output_path is not None:
+            # Get video properties
+            frame_width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
+            frame_height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = int(video.get(cv2.CAP_PROP_FPS))
+
+            # Initialize VideoWriter
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
+
+        # Time container
+        inference_times = []
         while True:
             ret, frame = video.read()  # Read the video frames
 
@@ -164,21 +184,49 @@ class HOLOH:
             if not ret:
                 break
 
-            # Track objects in frames if available
-            detect_results = self.object_track_model.track(
-                frame, conf=0.3, iou=0.3, persist=True, tracker=byte_tracker_cfg)
-            drivable_results = self.drivable_seg_model.track(
-                frame, conf=0.3, iou=0.3, persist=True, tracker=byte_tracker_cfg)
-            lane_results = self.lane_seg_model.track(
-                frame, conf=0.3, iou=0.3, persist=True, tracker=byte_tracker_cfg)
+            if is_blind_spot:
+                e1 = cv2.getTickCount()  # start
+                # Only use the object tracker for blind spot detection
+                detect_results = self.object_track_model.track(
+                    frame, persist=True,
+                    conf=0.3, iou=0.3,
+                    tracker=byte_tracker_cfg
+                )
+                annotated_frame = detect_results[0].plot(conf=False, labels=False)
+                e2 = cv2.getTickCount()  # end
+            else:
+                e1 = cv2.getTickCount()  # start
+                # Track objects in frames if available
+                detect_results = self.object_track_model.track(
+                    frame, persist=True,
+                    conf=0.3, iou=0.3,
+                    tracker=byte_tracker_cfg
+                )
+                drivable_results = self.drivable_seg_model.track(
+                    frame, persist=True,
+                    conf=0.3, iou=0.3,
+                    tracker=byte_tracker_cfg
+                )
+                lane_results = self.lane_seg_model.track(
+                    frame, persist=True,
+                    conf=0.3, iou=0.3,
+                    tracker=byte_tracker_cfg
+                )
 
-            # Plot the results for visualization
-            detect_plot = detect_results[0].plot(conf=False, labels=False)
-            drivable_plot = drivable_results[0].plot(conf=False, img=detect_plot, boxes=False)
-            lane_plot = lane_results[0].plot(conf=False, img=drivable_plot, boxes=False)
+                # Plot the results for visualization
+                detect_plot = detect_results[0].plot(conf=False, labels=False)
+                drivable_plot = drivable_results[0].plot(conf=False, img=detect_plot, boxes=False)
+                annotated_frame = lane_results[0].plot(conf=False, img=drivable_plot, boxes=False)
+                e2 = cv2.getTickCount()  # end
+
+            # Write the frame into the video
+            if output_path is not None:
+                out.write(annotated_frame)
 
             # Display the results
-            cv2.imshow(f"Hawkeye", lane_plot)
+            cv2.imshow(winname=window_name, mat=annotated_frame)
+            inference_elapsed = (e2 - e1) / cv2.getTickFrequency()
+            inference_times.append(inference_elapsed)
 
             key = cv2.waitKey(1)
             if key == ord('q'):
@@ -186,7 +234,14 @@ class HOLOH:
 
         # Release video sources
         video.release()
+        # Release the VideoWriter
+        if output_path is not None:
+            out.release()
         # Clean up and close windows
         cv2.destroyAllWindows()
+
+        logger.info(f"Average inference time: {np.mean(inference_times):.4f} seconds")
+        # For BOT-SORT Tracker - Average inference time: 0.0884 seconds per frame
+        # For ByteTrack Tracker - Average inference time: 0.0479 seconds per frame
 
         return
