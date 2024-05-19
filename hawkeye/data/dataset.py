@@ -22,7 +22,7 @@ from ultralytics.data.utils import (
 from ultralytics.utils import LOCAL_RANK, NUM_THREADS, TQDM
 from ultralytics.utils.ops import resample_segments
 
-from hawkeye.dedicated.data.base import BaseDataset, verify_image_label
+from hawkeye.data.base import BaseDataset, verify_image_label
 from hawkeye.utils import DATA_DIR, logger as LOGGER
 
 # Ultralytics dataset *.cache version, >= 1.0.0 for YOLOv8

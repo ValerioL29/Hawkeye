@@ -10,8 +10,8 @@ from ultralytics.engine.results import Results
 from ultralytics.nn import attempt_load_one_weight
 from ultralytics.utils import checks, yaml_load, DEFAULT_CFG_DICT, RANK, ASSETS
 
-from hawkeye.dedicated.core.task import MultitaskModel
-from hawkeye.dedicated.engine import MultitaskTrainer, MultitaskValidator, MultitaskPredictor
+from hawkeye.core.task import MultitaskModel
+from hawkeye.engine import MultitaskTrainer, MultitaskValidator, MultitaskPredictor
 from hawkeye.utils import logger as LOGGER
 
 

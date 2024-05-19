@@ -10,9 +10,9 @@ from ultralytics.data.build import InfiniteDataLoader
 from ultralytics.utils import RANK
 from ultralytics.utils.torch_utils import torch_distributed_zero_first
 
-from hawkeye.dedicated.core.task import MultitaskModel
-from hawkeye.dedicated.data.dataset import build_holo_dataset
-from hawkeye.dedicated.engine.base import BaseTrainer
+from hawkeye.core.task import MultitaskModel
+from hawkeye.data.dataset import build_holo_dataset
+from hawkeye.engine.base import BaseTrainer
 from hawkeye.utils import logger as LOGGER
 
 

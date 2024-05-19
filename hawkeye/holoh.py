@@ -6,7 +6,7 @@ from typing import Union
 import torch
 from ultralytics import YOLO
 
-from hawkeye.utils import logger
+from hawkeye.utils import logger, MODELS_DIR
 
 
 class HOLOH:
@@ -97,7 +97,7 @@ class HOLOH:
         # Release video sources
         video.release()
 
-    def run(self, video_or_stream: Union[str, Path, int]):
+    def run_multithread(self, video_or_stream: Union[str, Path, int]):
         """Predict with the agent"""
         # Check file path
         if isinstance(video_or_stream, str):
@@ -139,3 +139,54 @@ class HOLOH:
         cv2.destroyAllWindows()
 
         return True
+
+    def run_aio(self, video_or_stream: Union[str, Path, int]):
+        """Predict with the agent"""
+        # Check file path
+        if isinstance(video_or_stream, str):
+            video_or_stream = Path(video_or_stream)
+        if isinstance(video_or_stream, Path) and not video_or_stream.exists():
+            raise FileNotFoundError(f"Video not found: {video_or_stream}")
+
+        # Check if models are loaded
+        if not self.loaded:
+            raise RuntimeError("Models are not loaded")
+
+        # OpenCV can only accept string paths
+        video_source = str(video_or_stream)
+        video = cv2.VideoCapture(video_source)  # Read the video file
+        byte_tracker_cfg = MODELS_DIR / "cfg" / "trackers" / "bytetrack.yaml"
+
+        while True:
+            ret, frame = video.read()  # Read the video frames
+
+            # Exit the loop if no more frames in either video
+            if not ret:
+                break
+
+            # Track objects in frames if available
+            detect_results = self.object_track_model.track(
+                frame, persist=True, tracker=byte_tracker_cfg)
+            drivable_results = self.drivable_seg_model.track(
+                frame, persist=True, tracker=byte_tracker_cfg)
+            lane_results = self.lane_seg_model.track(
+                frame, persist=True, tracker=byte_tracker_cfg)
+
+            # Plot the results for visualization
+            detect_plot = detect_results[0].plot(conf=False)
+            drivable_plot = drivable_results[0].plot(conf=False, img=detect_plot)
+            lane_plot = lane_results[0].plot(conf=False, img=drivable_plot)
+
+            # Display the results
+            cv2.imshow(f"Hawkeye", lane_plot)
+
+            key = cv2.waitKey(1)
+            if key == ord('q'):
+                break
+
+        # Release video sources
+        video.release()
+        # Clean up and close windows
+        cv2.destroyAllWindows()
+
+        return
