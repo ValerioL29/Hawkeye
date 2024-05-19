@@ -166,11 +166,11 @@ class HOLOH:
 
             # Track objects in frames if available
             detect_results = self.object_track_model.track(
-                frame, persist=True, tracker=byte_tracker_cfg)
+                frame, conf=0.3, iou=0.3, persist=True, tracker=byte_tracker_cfg)
             drivable_results = self.drivable_seg_model.track(
-                frame, persist=True, tracker=byte_tracker_cfg)
+                frame, conf=0.3, iou=0.3, persist=True, tracker=byte_tracker_cfg)
             lane_results = self.lane_seg_model.track(
-                frame, persist=True, tracker=byte_tracker_cfg)
+                frame, conf=0.3, iou=0.3, persist=True, tracker=byte_tracker_cfg)
 
             # Plot the results for visualization
             detect_plot = detect_results[0].plot(conf=False)
